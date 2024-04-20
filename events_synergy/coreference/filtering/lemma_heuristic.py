@@ -339,7 +339,7 @@ def lh_oracle(dataset, threshold=0.05):
         )
 
 
-def get_lh_pairs(mention_map, split, men_type="evt", heu="lh", lh_threshold=0.15, lemma_pairs=None):
+def get_lh_pairs(mention_map, men_type, split, heu="lh", lh_threshold=0.15, lemma_pairs=None):
     evt_mention_map = {
         m_id: m for m_id, m in mention_map.items() if m["men_type"] == men_type
     }
@@ -376,12 +376,12 @@ def get_lh_pairs(mention_map, split, men_type="evt", heu="lh", lh_threshold=0.15
         split_syn_lemma_pairs,
         threshold=lh_threshold,
     )
-
     return m_pairs, m_pairs_trans
 
 
 def save_lh_pairs(
     mention_map: Dict,
+    men_type:str,
     split: str,
     heu: str = "lh",
     lh_threshold: float = 0.1,
@@ -392,7 +392,7 @@ def save_lh_pairs(
     else:
         add_fn = False
     m_pairs, _ = get_lh_pairs(
-        mention_map, split, heu=heu, lh_threshold=lh_threshold
+        mention_map, men_type, split, heu=heu, lh_threshold=lh_threshold
     )
     if len(m_pairs) == 0:
         return

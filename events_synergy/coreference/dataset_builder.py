@@ -1,50 +1,54 @@
-from datasets import load_dataset
-from torch.utils.data import Dataset, DataLoader
+from datasets import Dataset, DatasetDict, load_dataset
 from typing import Callable
 
-from .filtering.lemma_heuristic import save_lh_pairs
+
+def get_mention_map(dataset_dict: DatasetDict):
+    splits = list(dataset_dict)
+    mention_map = {}
+    for split in splits:
+        dataset_dict[split] = dataset_dict[split].to_pandas()
+        split_dict_array = dataset_dict[split].to_dict("records")
+        for record in split_dict_array:
+            mention_id = record["mention_id"]
+            mention_map[mention_id] = record
+            mention_map[mention_id]["topic"] = mention_id.split("_")[0]
+    return mention_map
 
 
-class CoreferenceDataset(Dataset):
-    def __init__(self, mention_map, split, filterer: Callable, text_key="marked_sentence"):
-        self.mention_map = mention_map
-        self.mention_pairs_dataset = filterer(self.mention_map, split)
-        self.text_key = text_key
-        self.dataset = self.generate_dataset()
+def generate_coref_dataset(
+    mention_dataset: str, men_type: str, filterer: Callable, text_key="marked_sentence"
+):
+    """
 
-    def __len__(self):
-        return len(self.mention_pairs_dataset)
+    :param mention_dataset:
+    :param men_type:
+    :param filterer:
+    :param text_key:
+    :return: DatasetDict
+    """
+    mention_dataset_dict = load_dataset(mention_dataset)
+    mention_map = get_mention_map(mention_dataset_dict)
 
-    def __getitem__(self, idx):
-        return self.dataset[idx]
-
-    def generate_dataset(self):
-        prompts = []
-        responses = []
-        for m1, m2 in self.mention_pairs_dataset:
-            mention_1 = self.mention_map[m1]
-            mention_2 = self.mention_map[m2]
+    splits = list(mention_dataset_dict)
+    split2dataset = {}
+    for split in splits:
+        mention_pairs_dataset = filterer(mention_map, men_type, split)
+        prompt_responses = []
+        for m1, m2 in mention_pairs_dataset:
+            mention_1 = mention_map[m1]
+            mention_2 = mention_map[m2]
 
             prompt = f"Coreference: \
-            <m> {mention_1['mention_text']} </m> in {mention_1[self.text_key]} </s> \
-            <m> {mention_2['mention_text']} </m> in {mention_2[self.text_key]}"
+            <m> {mention_1['mention_text']} </m> in {mention_1[text_key]} </s> \
+            <m> {mention_2['mention_text']} </m> in {mention_2[text_key]}"
             response = (
-                "Yes" if mention_1["gold_cluster"] == mention_2["gold_cluster"] else "No"
+                "Yes"
+                if mention_1["gold_cluster"] == mention_2["gold_cluster"]
+                else "No"
             )
 
-            prompts.append(prompt)
-            responses.append(response)
+            prompt_responses.append({"prompt": prompt, "response": response})
 
-        return {"prompt": prompts, "response": responses}
+        split2dataset[split] = Dataset.from_list(prompt_responses)
 
-
-if __name__ == "__main__":
-    mention_dataset_ = "ahmeshaf/ecb_plus_mentions"
-    coref_dataset = CoreferenceDataset(mention_dataset_, "dev", save_lh_pairs)
-
-    my_loader = DataLoader(coref_dataset, batch_size=2, shuffle=True)
-    for batch in my_loader:
-        print(batch)
-        break
-
-
+    return DatasetDict(split2dataset)
