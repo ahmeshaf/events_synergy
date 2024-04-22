@@ -1,0 +1,5 @@
+
+TRIGGERS_PREFIX = "triggers"
+ENTITIES_PREFIX = "entities"
+SRL_PREFIX = "SRL"
+COREFERENCE_PREFIX = "Coreference"
