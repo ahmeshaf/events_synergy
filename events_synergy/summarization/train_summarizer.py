@@ -13,7 +13,7 @@ app = Typer()
 def train(config_file: Path, dataset_name: List[str]):
     dataset_names = list(set(dataset_name))
     tagger_datasets = {
-        ds_name: get_xsum() for ds_name in dataset_names
+        ds_name: get_hf_dataset(ds_name) for ds_name in dataset_names
     }
     trainer_seq2seq_multi(
         config_file,
