@@ -1,4 +1,5 @@
 from datasets import load_dataset, Dataset, DatasetDict
+from ..task_constants import TRIGGERS_PREFIX, ENTITIES_PREFIX
 
 
 def make_tagger_dataset(mention_dataset_name):
@@ -35,7 +36,7 @@ def make_tagger_dataset(mention_dataset_name):
 
         trigger_records = [
             {
-                "prompt": sent_id2sentence[sent_id],
+                "prompt": f"{TRIGGERS_PREFIX}: " + sent_id2sentence[sent_id],
                 "response": " | ".join([record["mention_text"] for record in records]),
             }
             for sent_id, records in sent_id2evtrecords.items()
@@ -43,7 +44,7 @@ def make_tagger_dataset(mention_dataset_name):
 
         entity_records = [
             {
-                "prompt": sent_id2sentence[sent_id],
+                "prompt": f"{ENTITIES_PREFIX}: " + sent_id2sentence[sent_id],
                 "response": " | ".join([record["mention_text"] for record in records]),
             }
             for sent_id, records in sent_id2entrecords.items()
