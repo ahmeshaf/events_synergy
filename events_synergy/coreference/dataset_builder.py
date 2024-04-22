@@ -1,6 +1,10 @@
 from datasets import Dataset, DatasetDict, load_dataset
 from typing import Callable
 
+from jinja2 import Template
+
+from ..task_constants import COREF_TEMPLATE
+
 
 def get_mention_map(dataset_dict: DatasetDict):
     splits = list(dataset_dict)
@@ -26,6 +30,7 @@ def generate_coref_dataset(
     :param text_key:
     :return: DatasetDict
     """
+    template = Template(COREF_TEMPLATE)
     mention_dataset_dict = load_dataset(mention_dataset)
     mention_map = get_mention_map(mention_dataset_dict)
 
@@ -38,9 +43,13 @@ def generate_coref_dataset(
             mention_1 = mention_map[m1]
             mention_2 = mention_map[m2]
 
-            prompt = f"Coreference: \
-            <m> {mention_1['mention_text']} </m> in {mention_1[text_key]} </s> \
-            <m> {mention_2['mention_text']} </m> in {mention_2[text_key]}"
+            prompt = template.render(
+                mention_text_1=mention_1["mention_text"],
+                mention1_context=mention_1[text_key],
+                mention_text_2=mention_2["mention_text"],
+                mention2_context=mention_2[text_key],
+            )
+
             response = (
                 "Yes"
                 if mention_1["gold_cluster"] == mention_2["gold_cluster"]
