@@ -1,15 +1,15 @@
 {
-    "model_name_or_path": "google/flan-t5-small",
+    "model_name_or_path": "/media/rehan/big_disk/models/kairos/ecb/multi/",
     "trainer": {
         "output_dir": "/media/rehan/big_disk/models/kairos/ecb/multi/",
         "num_train_epochs": 100,
         "per_device_train_batch_size": 128,
         "per_device_eval_batch_size": 256,
-        "warmup_steps": 5,
+        "warmup_steps": 100,
         "weight_decay": 0.01,
         "logging_steps": 100,
         "evaluation_strategy": "steps",
-        "eval_steps": 10,
+        "eval_steps": 200,
         "predict_with_generate": true,
         "learning_rate": 5e-5,
         "save_total_limit": 1,
@@ -17,7 +17,7 @@
         "resume_from_checkpoint": true
     },
     "generation": {
-        "max_new_tokens": 32,
+        "max_new_tokens": 4,
         "early_stopping": true,
         "min_new_tokens": 2,
         "num_beams": 2,

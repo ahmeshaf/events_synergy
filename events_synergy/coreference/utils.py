@@ -1,18 +1,26 @@
 import os
-from pathlib import Path
-from typing import Dict, List, Tuple
-
 import numpy as np
 import torch
-from scipy.sparse import csr_matrix
-from scipy.sparse.csgraph import connected_components
 
 from coval.conll.reader import get_coref_infos
 from coval.eval.evaluator import b_cubed, ceafe, evaluate_documents, lea, muc
+from datasets import Dataset
+from pathlib import Path
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
+from typing import Dict, List, Tuple
 
 TRAIN = "train"
-DEV = "dev"
+VALID = "validation"
 TEST = "test"
+
+
+def get_mention_map(mention_dataset: Dataset, men_type: str = "evt"):
+    return {
+        record["mention_id"]: record
+        for record in mention_dataset.to_pandas().to_dict("records")
+        if record["men_type"] == men_type or men_type == "all"
+    }
 
 
 def cluster_cc(affinity_matrix, threshold=0.8):
@@ -39,26 +47,25 @@ def remove_puncts(target_str):
     # return target_str.translate(str.maketrans('', '', string.punctuation)).lower()
 
 
-def jc(arr1, arr2):
+def jaccard_similarity(arr1, arr2):
     return len(set.intersection(set(arr1), set(arr2))) / len(
         set.union(set(arr1), set(arr2))
     )
 
 
-def generate_mention_pairs(mention_map, split):
+def generate_topic_mention_pairs(mention_map):
     """
 
     Parameters
     ----------
-    mention_map: dict
-    split: str (train/dev/test)
+    mention_map: dict\
 
     Returns
     -------
     list: A list of all possible mention pairs within a topic
     """
     split_mention_ids = sorted(
-        [m_id for m_id, m in mention_map.items() if m["split"] == split]
+        [m_id for m_id, m in mention_map.items()]
     )
     topic2mentions = {}
     for m_id in split_mention_ids:
@@ -91,9 +98,11 @@ def generate_mention_pairs(mention_map, split):
                     mention_map[m2]["doc_id"],
                     mention_map[m2]["sentence_id"],
                 )
+                men_type_1 = mention_map[m1]["men_type"]
+                men_type_2 = mention_map[m2]["men_type"]
                 if m1 > m2:
                     m2, m1 = m1, m2
-                if i != j and mention_map and doc_sent_id1 != doc_sent_id2:
+                if i != j and doc_sent_id1 != doc_sent_id2 and men_type_1 == men_type_2:
                     mention_pairs.append((m1, m2))
     # print(len(mention_pairs))
     # mention_pairs = list(set(mention_pairs))
