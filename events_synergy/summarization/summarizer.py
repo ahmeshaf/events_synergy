@@ -27,5 +27,4 @@ def summarize(
         batch = documents[i: i + batch_size]
         batch_summaries = summary_pipeline(batch)
         summaries.extend([summary[0] for summary in batch_summaries])
-    print(summaries)
     return summaries
