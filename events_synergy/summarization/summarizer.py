@@ -2,6 +2,8 @@ from tqdm import tqdm
 from transformers import Text2TextGenerationPipeline
 from typing import List
 
+from ..events_pipeline import EventsPipeline
+
 
 def summarize(
     documents: List[str],
@@ -11,9 +13,10 @@ def summarize(
     batch_size: int = 8,
 ):
     summaries = []
-    text2text_pipeline = Text2TextGenerationPipeline(
+    summary_pipeline = EventsPipeline(
         model=model,
         tokenizer=tokenizer,
+        task_prefix="summarize",
         generation_config=generation_config,
         framework="pt",
     )
@@ -22,7 +25,7 @@ def summarize(
         range(0, len(documents), batch_size), total=len(documents), desc="Summarizing"
     ):
         batch = documents[i: i + batch_size]
-        batch_summaries = text2text_pipeline(batch)
-        summaries.extend([summary["generated_text"] for summary in batch_summaries])
-
+        batch_summaries = summary_pipeline(batch)
+        summaries.extend([summary[0] for summary in batch_summaries])
+    print(summaries)
     return summaries

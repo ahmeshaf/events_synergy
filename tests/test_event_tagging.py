@@ -1,6 +1,7 @@
 # tests for events_synergy.event_tagging module
 
 import pytest
+from transformers import T5ForConditionalGeneration, T5Tokenizer, GenerationConfig
 
 from events_synergy.event_tagging.event_tagger import (
     event_tagger
@@ -8,6 +9,11 @@ from events_synergy.event_tagging.event_tagger import (
 
 
 class TestEventTagging:
+    model_name = "ahmeshaf/ecb_tagger_seq2seq"
+    model = T5ForConditionalGeneration.from_pretrained(model_name)
+    tokenizer = T5Tokenizer.from_pretrained(model_name)
+    generation_config = GenerationConfig.from_pretrained(model_name)
+
     def test_event_tagger(self):
         # Define the input
         sentences = [
@@ -15,7 +21,7 @@ class TestEventTagging:
             "The earthquake took 10 lives ."
         ]
         # Call the function to test
-        result = event_tagger(sentences)
+        result = event_tagger(sentences, self.model, self.tokenizer, self.generation_config)
         # Define the expected output
         expected_output = [
             [

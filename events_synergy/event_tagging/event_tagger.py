@@ -9,10 +9,8 @@ from ..task_constants import TRIGGERS_PREFIX
 from ..utils.helpers import find_word_offsets
 
 
-def event_tagger(sentences, model_name="ahmeshaf/ecb_tagger_seq2seq"):
-    model = T5ForConditionalGeneration.from_pretrained(model_name)
-    tokenizer = T5Tokenizer.from_pretrained(model_name)
-    generation_config = GenerationConfig.from_pretrained(model_name)
+def event_tagger(sentences, model=None, tokenizer=None, generation_config=None):
+
     # Initialize our custom pipeline
     triggers_pipeline = EventsPipeline(
         model=model,
