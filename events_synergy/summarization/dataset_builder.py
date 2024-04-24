@@ -1,42 +1,34 @@
-from datasets import load_dataset
-from torch.utils.data import Dataset
+from datasets import Dataset, DatasetDict, load_dataset
 import pathlib
 
 DATA_ROOT = (pathlib.Path(__file__).parent.parent / "data").resolve()
 CNN_URL = "https://drive.google.com/uc?id=0BwmD_VLjROrfTHk4NFg2SndKcjQ"
 
 
+def get_hf_dataset(dataset: Dataset, doc_col_name, summary_col_name):
+    records = []
+    for doc in dataset.to_pandas().to_dict("records"):
+        prompt = f"Summarize the following article:\n\n{doc[doc_col_name]}"
+        summary = doc[summary_col_name]
+
+        records.append({"prompt": prompt, "response": summary})
+
+    return Dataset.from_list(records)
 
 
+def generate_summ_dataset(
+    summ_dataset_dict: DatasetDict, doc_col_name, summary_col_name
+):
+    dataset_dict = {}
+    for split in summ_dataset_dict:
+        dataset_dict[split] = get_hf_dataset(
+            summ_dataset_dict[split], doc_col_name, summary_col_name
+        )
 
-def get_hf_dataset(dataset_name: str,
-                   summary_colname: str = "summary",
-                   doc_colname: str = "document"):
-    dataset = load_dataset(dataset_name, summary_colname, doc_colname)
-
-    return {'train': SummarizationDataset(dataset['train']),
-            'dev': SummarizationDataset(dataset['validation']),
-            'test': SummarizationDataset(dataset['test'])}
-
-def generate_dataset(data, summary_colname, doc_colname):
-    prompts = []
-    responses = []
-    for doc in data:
-        prompt = f"Summarize the following article:\n\n{doc[doc_colname]}"
-        summary = doc[summary_colname]
-
-        prompts.append(prompt)
-        responses.append(summary)
-
-    return {"prompt": prompts, "response": responses}
+    return DatasetDict(dataset_dict)
 
 
-class SummarizationDataset:
-    def __init__(self, data, summary_colname, doc_colname):
-        self.data = generate_dataset(data, summary_colname, doc_colname)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        return self.data[idx]
+def get_xsum():
+    XSUM_DS = "EdinburghNLP/xsum"
+    dataset = load_dataset(XSUM_DS)
+    return generate_summ_dataset(dataset, "document", "summary")

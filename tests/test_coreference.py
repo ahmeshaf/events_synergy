@@ -161,7 +161,7 @@ class TestCoreference:
         assert set(result_ent) == expected_output_ent
         assert set(result_all) == expected_output_all
 
-    def test_coref_resolver(self):
+    def test_mention_coref_resolver(self):
         # Test the CorefResolver class
         # Define the input
         train_dataset = Dataset.from_list(TRAIN_DATASET)

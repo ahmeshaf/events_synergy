@@ -6,7 +6,7 @@ import jinja2
 from tqdm import tqdm
 from transformers.pipelines import Text2TextGenerationPipeline
 
-from .utils import cluster_cc, cluster
+from .utils import cluster
 from ..task_constants import COREF_TEMPLATE
 
 
