@@ -12,12 +12,17 @@ def event_tagger(sentences, model=None, tokenizer=None, generation_config=None, 
         framework="pt",
         generation_config=generation_config,
     )
+    return event_tagger_pipeline(triggers_pipeline, sentences, batch_size)
+
+
+def event_tagger_pipeline(triggers_pipeline, sentences, batch_size=8):
     outputs = pipe(triggers_pipeline, sentences, batch_size, desc="Tagging")
     trigger_offsets = []
 
     for sentence, triggers in zip(sentences, outputs):
-        offsets = find_word_offsets(sentence, triggers)
-        trigger_offsets.append(list(zip(triggers, offsets)))
+        split_triggers = [t.strip() for t in triggers.split("|") if t.strip() != ""]
+        offsets = find_word_offsets(sentence, split_triggers)
+        trigger_offsets.append(list(zip(split_triggers, offsets)))
     return trigger_offsets
 
 

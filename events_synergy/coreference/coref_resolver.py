@@ -7,6 +7,7 @@ from tqdm import tqdm
 from transformers.pipelines import Text2TextGenerationPipeline
 
 from .utils import cluster
+from ..event_tagging.event_tagger import event_tagger_pipeline
 from ..task_constants import COREF_TEMPLATE
 
 
@@ -70,7 +71,7 @@ class DocumentCorefResolver(MentionsCorefResolver):
         self.mention_tagger = mention_tagger
         super().__init__(**kwargs)
 
-    def __call__(self, docs: List[Dict[str]], batch_size=32, **kwargs):
+    def __call__(self, docs, **kwargs):
         """
 
         :param docs: each document is of the form:
@@ -92,9 +93,41 @@ class DocumentCorefResolver(MentionsCorefResolver):
         :param kwargs:
         :return:
         """
-        topic_doc_sentence_ids = [(d["topic"], d["doc_id"], s["sentence_id"]) for d in docs for s in d["sentences"]]
-        sentences = [sentence["sentence"] for doc in docs for sentence in doc["sentences"]]
+        topic_doc_sentence_ids = [
+            (d["topic"], d["doc_id"], s["sentence_id"], s["sentence"])
+            for d in docs
+            for s in d["sentences"]
+        ]
+        sentences = [
+            sentence["sentence"] for doc in docs for sentence in doc["sentences"]
+        ]
 
-        event_triggers = self.mention_tagger(sentences, **kwargs)
+        event_triggers = event_tagger_pipeline(
+            self.mention_tagger, sentences, batch_size=8
+        )
 
+        mention_map = {}
+        for (topic, doc_id, sentence_id, sentence), triggers in zip(
+            topic_doc_sentence_ids, event_triggers
+        ):
 
+            for i, trigger in enumerate(triggers):
+                (mention_txt, (start, end)) = trigger
+                mention_id = "_".join([topic, doc_id, sentence_id, str(start), str(end)])
+                mention_map[mention_id] = {
+                    "topic": topic,
+                    "doc_id": doc_id,
+                    "sentence_id": sentence_id,
+                    "sentence": sentence,
+                    "mention_text": mention_txt,
+                    "start_char": start,
+                    "end_char": end,
+                    "marked_sentence": sentence[: start]
+                        + " <m> " + mention_txt + " </m> " + sentence[end:],
+                    "mention_id": mention_id,
+                    "split": "predict",
+                    "men_type": "evt",
+                    "lemma": mention_txt,
+                    "sentence_tokens": sentence.split(),
+                }
+        return super().__call__(mention_map, **kwargs)

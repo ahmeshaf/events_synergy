@@ -3,10 +3,15 @@ import pytest
 from transformers import GenerationConfig, T5ForConditionalGeneration, T5Tokenizer
 
 from events_synergy.coreference.filtering import lemma_heuristic
-from events_synergy.coreference.coref_resolver import MentionsCorefResolver
+from events_synergy.coreference.coref_resolver import (
+    MentionsCorefResolver,
+    DocumentCorefResolver,
+)
 from datasets import Dataset
 
 from events_synergy.coreference.utils import get_mention_map
+from events_synergy.events_pipeline import EventsPipeline
+from events_synergy.task_constants import TRIGGERS_PREFIX
 
 TRAIN_DATASET = [
     {
@@ -188,13 +193,78 @@ class TestCoreference:
         result_all = coref_resolver(test_map_all)
 
         # Define the expected output
-        expected_output = [('m1', 0), ('m2', 0)]
-        expected_output_ent = [('m3', 0), ('m4', 0)]
-        expected_output_all = [('m1', 0), ('m2', 0), ('m3', 1), ('m4', 1)]
+        expected_output = [("m1", 0), ("m2", 0)]
+        expected_output_ent = [("m3", 0), ("m4", 0)]
+        expected_output_all = [("m1", 0), ("m2", 0), ("m3", 1), ("m4", 1)]
         # Compare the result with the expected output
         assert result_evt == expected_output
         assert result_ent == expected_output_ent
         assert result_all == expected_output_all
+
+    def test_docs_coref_resolver(self):
+        docs = [
+            {
+                "topic": "1",
+                "doc_id": "doc1",
+                "sentences": [
+                    {
+                        "sentence_id": "s1",
+                        "sentence": "I like this sentence",
+                    },
+                    {
+                        "sentence_id": "s2",
+                        "sentence": "I love this sentence",
+                    },
+                ],
+            },
+            {
+                "topic": "1",
+                "doc_id": "doc2",
+                "sentences": [
+                    {
+                        "sentence_id": "s1",
+                        "sentence": "I like this sentence",
+                    },
+                    {
+                        "sentence_id": "s2",
+                        "sentence": "I love this sentence",
+                    },
+                ],
+            },
+        ]
+
+        model_name = "/media/rehan/big_disk/models/kairos/ecb/multi/"
+        model = T5ForConditionalGeneration.from_pretrained(model_name)
+        tokenizer = T5Tokenizer.from_pretrained(model_name)
+        generation_config = GenerationConfig.from_pretrained(model_name)
+
+        ecb_name = "ahmeshaf/ecb_tagger_seq2seq"
+        ecb_model = T5ForConditionalGeneration.from_pretrained(ecb_name)
+        ecb_tokenizer = T5Tokenizer.from_pretrained(ecb_name)
+        ecb_generation_config = GenerationConfig.from_pretrained(ecb_name)
+
+        triggers_pipeline = EventsPipeline(
+            model=ecb_model,
+            tokenizer=ecb_tokenizer,
+            task_prefix=TRIGGERS_PREFIX,
+            framework="pt",
+            generation_config=ecb_generation_config,
+        )
+
+        coref_resolver = DocumentCorefResolver(
+            triggers_pipeline,
+            model=model,
+            tokenizer=tokenizer,
+            generation_config=generation_config,
+            filterer=lemma_heuristic.LHFilterer(Dataset.from_list(TRAIN_DATASET)),
+        )
+        mention_clusters = coref_resolver(docs)
+        mentions, clusters = zip(*mention_clusters)
+
+        assert mention_clusters is not None
+        assert "1_doc1_s1_2_6" in mentions
+        assert "1_doc2_s1_2_6" in mentions
+        assert len(set(clusters)) == 2
 
 
 # Run the test
