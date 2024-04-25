@@ -1,6 +1,6 @@
 # The coref resolver uses a custom pipeline to resolve cross-doc coreferences in a text documents.
 # The pipeline is initialized with a pre-trained model and tokenizer.
-from typing import Callable
+from typing import Callable, List, Dict
 
 import jinja2
 from tqdm import tqdm
@@ -63,3 +63,38 @@ class MentionsCorefResolver(Callable):
         clusters = cluster(m_ids, mention_pairs_dataset, similarities)
 
         return clusters
+
+
+class DocumentCorefResolver(MentionsCorefResolver):
+    def __init__(self, mention_tagger, **kwargs):
+        self.mention_tagger = mention_tagger
+        super().__init__(**kwargs)
+
+    def __call__(self, docs: List[Dict[str]], batch_size=32, **kwargs):
+        """
+
+        :param docs: each document is of the form:
+            {
+                "topic": "topic_1",
+                "doc_id": "doc_1",
+                "sentences": [
+                    {
+                        "sentence_id": "s1",
+                        "sentence": "This is a sentence",
+                    },
+                    {
+                        "sentence_id": "s2",
+                        "sentence": "This is another sentence",
+                    },
+                    ...
+                ]
+            }
+        :param kwargs:
+        :return:
+        """
+        topic_doc_sentence_ids = [(d["topic"], d["doc_id"], s["sentence_id"]) for d in docs for s in d["sentences"]]
+        sentences = [sentence["sentence"] for doc in docs for sentence in doc["sentences"]]
+
+        event_triggers = self.mention_tagger(sentences, **kwargs)
+
+

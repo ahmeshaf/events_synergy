@@ -1,16 +1,9 @@
-from transformers import (
-    GenerationConfig,
-    T5ForConditionalGeneration,
-    T5Tokenizer
-)
-
-from ..events_pipeline import EventsPipeline
+from ..events_pipeline import EventsPipeline, pipe
 from ..task_constants import TRIGGERS_PREFIX
 from ..utils.helpers import find_word_offsets
 
 
-def event_tagger(sentences, model=None, tokenizer=None, generation_config=None):
-
+def event_tagger(sentences, model=None, tokenizer=None, generation_config=None, batch_size=8):
     # Initialize our custom pipeline
     triggers_pipeline = EventsPipeline(
         model=model,
@@ -19,9 +12,10 @@ def event_tagger(sentences, model=None, tokenizer=None, generation_config=None):
         framework="pt",
         generation_config=generation_config,
     )
-    sentence_triggers = triggers_pipeline(sentences)
+    outputs = pipe(triggers_pipeline, sentences, batch_size, desc="Tagging")
     trigger_offsets = []
-    for sentence, triggers in zip(sentences, sentence_triggers):
+
+    for sentence, triggers in zip(sentences, outputs):
         offsets = find_word_offsets(sentence, triggers)
         trigger_offsets.append(list(zip(triggers, offsets)))
     return trigger_offsets

@@ -11,15 +11,17 @@ def test_summarizer_summarize():
         "I like this sentence and hate this sentence and I like this thing",
         "The earthquake took 10 lives .",
     ]
+    documents = documents * 16
 
     model_name = "/media/rehan/big_disk/models/kairos/ecb/multi/"
     model = T5ForConditionalGeneration.from_pretrained(model_name)
     tokenizer = T5Tokenizer.from_pretrained(model_name)
     generation_config = GenerationConfig.from_pretrained(model_name)
-
+    generation_config.update(**{"max_new_tokens": 64})
     summary = summarize(documents, model=model, tokenizer=tokenizer, generation_config=generation_config)
+
     assert summary is not None
-    assert len(summary) == 2
+    assert len(summary) == 32
     assert isinstance(summary, list)
     assert isinstance(summary[0], str)
     assert isinstance(summary[1], str)

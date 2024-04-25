@@ -1,9 +1,19 @@
 import numpy as np
 
+from torch.utils.data import DataLoader as torch_DataLoader
+from tqdm import tqdm
+
 from transformers import (
-    Pipeline,
+    Pipeline, GenerationConfig, T5Tokenizer, T5ForConditionalGeneration,
 )
 from transformers.pipelines.base import PipelineException
+
+
+def get_model_tokenizer_generation_config(model_name):
+    model = T5ForConditionalGeneration.from_pretrained(model_name)
+    tokenizer = T5Tokenizer.from_pretrained(model_name)
+    generation_config = GenerationConfig.from_pretrained(model_name)
+    return model, tokenizer, generation_config
 
 
 class EventsPipeline(Pipeline):
@@ -55,11 +65,18 @@ class EventsPipeline(Pipeline):
         decoded_preds = self.tokenizer.batch_decode(
             predictions, skip_special_tokens=True
         )
-        decoded_pred = [
-            s.strip() for s in decoded_preds[0].split("|") if s.strip() != ""
-        ]
-        return decoded_pred
+
+        return decoded_preds[0]
 
     def __call__(self, inputs, **kwargs):
         # Ensure inputs is a list for consistent preprocessing
         return super().__call__(inputs, **kwargs)
+
+
+def pipe(pipeline: Pipeline, sentences, batch_size=8, desc="Tagging"):
+    pipe_dataloader = torch_DataLoader(sentences, batch_size=batch_size)
+    outputs = []
+    for batch in tqdm(pipe_dataloader, total=len(sentences), desc=desc):
+        outputs.extend(pipeline(batch))
+
+    return outputs
