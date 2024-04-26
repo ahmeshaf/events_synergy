@@ -45,6 +45,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         data_collator: Optional["DataCollator"] = None,
         train_dataset: Optional[Dataset] = None,
         eval_datasets: Optional[Dict[str, Union[Dataset, Dict[str, Dataset]]]] = None,
+        dataset2_is_prf: Optional[Dict[str, bool]] = None,
         tokenizer: Optional["PreTrainedTokenizerBase"] = None,
         model_init: Optional[Callable[[], "PreTrainedModel"]] = None,
         compute_metrics: Optional[Callable[["EvalPrediction"], Dict]] = None,
