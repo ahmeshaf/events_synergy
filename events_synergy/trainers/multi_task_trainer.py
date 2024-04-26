@@ -5,6 +5,7 @@ import numpy as np
 import torch
 
 from datasets import concatenate_datasets
+from evaluate import load
 from pathlib import Path
 from torch import nn
 from datasets import Dataset
@@ -57,6 +58,11 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         ] = None,
     ):
         self.eval_datasets = eval_datasets
+        self.rouge = load("rouge")
+
+        self.dataset2_is_prf_eval = dataset2_is_prf
+
+        self.compute_metrics = compute_metrics
         super().__init__(
             model=model,
             args=args,
@@ -72,7 +78,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
 
     def evaluate(
         self,
-        eval_dataset: Optional[Dataset] = None,
+        eval_datasets: Optional[Dict[str, Dataset]] = None,
         ignore_keys: Optional[List[str]] = None,
         metric_key_prefix: str = "eval",
         **gen_kwargs,
@@ -86,10 +92,11 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         You can also subclass and override this method to inject custom behavior.
 
         Args:
-            eval_dataset (`Dataset`, *optional*):
-                Pass a dataset if you wish to override `self.eval_dataset`. If it is an [`~datasets.Dataset`], columns
-                not accepted by the `model.forward()` method are automatically removed. It must implement the `__len__`
-                method.
+            eval_datasets Optional[Dict[str, Dataset]]:
+                Pass a dataset if you wish to override `self.eval_dataset`. If it is a [`~datasets.Dataset`], columns
+                not accepted by the `model.forward()` method are automatically removed. If it is a dictionary, it will
+                evaluate on each dataset, prepending the dictionary key to the metric name. Datasets must implement the
+                `__len__` method.
             ignore_keys (`List[str]`, *optional*):
                 A list of keys in the output of your model (if it is a dictionary) that should be ignored when
                 gathering predictions.
@@ -107,20 +114,85 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         Returns:
             A dictionary containing the evaluation loss and the potential metrics computed from the predictions. The
             dictionary also contains the epoch number which comes from the training state.
+            :param task_name:
         """
         eval_scores = {}
-        for dataset_name, eval_dataset_ in self.eval_datasets.items():
+        for dataset_name, eval_dataset in self.eval_datasets.items():
+            if self.dataset2_is_prf_eval[dataset_name]:
+                self.compute_metrics = self.compute_prf
+            else:
+                self.compute_metrics = self.compute_rouge
+
             print(f"Evaluating on {dataset_name}")
-            eval_scores[dataset_name] = super(MultiEvalTrainer, self).evaluate(
-                eval_dataset=eval_dataset_,
-                ignore_keys=ignore_keys,
-                metric_key_prefix=metric_key_prefix,
+            eval_scores.update(
+                super(MultiEvalTrainer, self).evaluate(
+                    eval_dataset=eval_dataset,
+                    ignore_keys=ignore_keys,
+                    metric_key_prefix=f"eval_{dataset_name}",
+                )
             )
 
         return eval_scores
 
+    def compute_prf(self, eval_pred):
+        predictions, labs = eval_pred
+        decoded_preds = self.decode_predictions(predictions)
+        decoded_labels = self.decode_predictions(labs)
 
-def trainer_seq2seq_multi(config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]]):
+        decoded_preds = [
+            set([p.strip() for p in pred.split("|") if p.strip() != ""])
+            for pred in decoded_preds
+        ]
+        decoded_labels = [
+            set([p.strip() for p in pred.split("|") if p.strip() != ""])
+            for pred in decoded_labels
+        ]
+
+        common_preds_lens = [
+            len(set.intersection(p1, p2))
+            for p1, p2 in zip(decoded_preds, decoded_labels)
+        ]
+        decoded_preds_lens = [len(p) for p in decoded_preds]
+        decoded_labels_lens = [len(p) for p in decoded_labels]
+
+        TP = sum(common_preds_lens)
+        FP = sum(decoded_preds_lens) - TP
+        FN = sum(decoded_labels_lens) - TP
+
+        precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+
+        recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+
+        f1 = (
+            2 * (precision * recall) / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
+
+        return {"precision": precision, "recall": recall, "f1": f1}
+
+    def compute_rouge(self, eval_pred):
+        predictions, labs = eval_pred
+        decoded_preds = self.decode_predictions(predictions)
+        decoded_labels = self.decode_predictions(labs)
+
+        return self.rouge.compute(
+            predictions=decoded_preds, references=decoded_labels, use_stemmer=True
+        )
+
+    def decode_predictions(self, predictions):
+        predictions = np.where(
+            predictions != -100, predictions, self.tokenizer.pad_token_id
+        )
+        decoded_preds = self.tokenizer.batch_decode(
+            predictions, skip_special_tokens=True
+        )
+        return decoded_preds
+
+
+def trainer_seq2seq_multi(
+    config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]]
+):
     """
 
     :param config_file:
@@ -144,7 +216,11 @@ def trainer_seq2seq_multi(config_file: Path, datasets_dict: Dict[str, Dict[str, 
     )
 
     eval_datasets = {
-        dataset_name: pre_process_eos(dataset["dev"], tokenizer.eos_token)
+        dataset_name: (
+            pre_process_eos(dataset["dev"], tokenizer.eos_token)
+            if "dev" in dataset.keys()
+            else pre_process_eos(dataset["validation"], tokenizer.eos_token)
+        )
         for dataset_name, dataset in datasets_dict.items()
     }
 
@@ -182,35 +258,6 @@ def trainer_seq2seq_multi(config_file: Path, datasets_dict: Dict[str, Dict[str, 
     training_args.generation_config = generation_config
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
 
-    def compute_prf(eval_pred):
-        predictions, labs = eval_pred
-        predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
-        decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-        labs = np.where(labs != -100, labs, tokenizer.pad_token_id)
-        decoded_labels = tokenizer.batch_decode(labs, skip_special_tokens=True)
-        # print(decoded_labels)
-
-        decoded_preds = [
-            set([p.strip() for p in pred.split("|") if p.strip() != ""])
-            for pred in decoded_preds
-        ]
-        decoded_labels = [
-            set([p.strip() for p in pred.split("|") if p.strip() != ""])
-            for pred in decoded_labels
-        ]
-
-        common_preds_lens = [
-            len(set.intersection(p1, p2))
-            for p1, p2 in zip(decoded_preds, decoded_labels)
-        ]
-        decoded_preds_lens = [len(p) for p in decoded_preds]
-        decoded_labels_lens = [len(p) for p in decoded_labels]
-
-        return {
-            "precision": np.sum(common_preds_lens) / np.sum(decoded_preds_lens),
-            "recall": np.sum(common_preds_lens) / np.sum(decoded_labels_lens),
-        }
-
     t5_trainer = MultiEvalTrainer(
         model=model,
         args=training_args,
@@ -218,7 +265,7 @@ def trainer_seq2seq_multi(config_file: Path, datasets_dict: Dict[str, Dict[str, 
         eval_datasets=evals_tokenized,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        compute_metrics=compute_prf,
+        # compute_metrics=compute_metrics, # This now gets set depending on which type of dataset is being evaluated
     )
     t5_trainer.train()
     t5_trainer.save_model()
