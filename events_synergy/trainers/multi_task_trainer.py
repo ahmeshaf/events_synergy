@@ -45,7 +45,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         data_collator: Optional["DataCollator"] = None,
         train_dataset: Optional[Dataset] = None,
         eval_datasets: Optional[Dict[str, Union[Dataset, Dict[str, Dataset]]]] = None,
-        dataset2_is_prf: Optional[Dict[str, bool]] = None,
+        dataset2_is_rouge: Optional[Dict[str, bool]] = None,
         tokenizer: Optional["PreTrainedTokenizerBase"] = None,
         model_init: Optional[Callable[[], "PreTrainedModel"]] = None,
         compute_metrics: Optional[Callable[["EvalPrediction"], Dict]] = None,
@@ -61,7 +61,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         self.eval_datasets = eval_datasets
         self.rouge = load("rouge")
 
-        self.dataset2_is_prf_eval = dataset2_is_prf
+        self.eval_is_rouge = dataset2_is_rouge
 
         self.compute_metrics = compute_metrics
         super().__init__(
@@ -119,10 +119,10 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         """
         eval_scores = {}
         for dataset_name, eval_dataset in self.eval_datasets.items():
-            if self.dataset2_is_prf_eval[dataset_name]:
-                self.compute_metrics = self.compute_prf
-            else:
+            if self.eval_is_rouge and self.eval_is_rouge[dataset_name]:
                 self.compute_metrics = self.compute_rouge
+            else:
+                self.compute_metrics = self.compute_prf
 
             print(f"Evaluating on {dataset_name}")
             eval_scores.update(
@@ -228,7 +228,7 @@ def trainer_seq2seq_multi(
     def preprocess_data(examples):
         model_inputs = tokenizer(examples["prompt"], max_length=128, truncation=True)
         with tokenizer.as_target_tokenizer():
-            labels = tokenizer(examples["response"], max_length=32, truncation=True)
+            labels = tokenizer(examples["response"], max_length=128, truncation=True)
         model_inputs["labels"] = labels["input_ids"]
         return model_inputs
 
@@ -268,5 +268,5 @@ def trainer_seq2seq_multi(
         data_collator=data_collator,
         # compute_metrics=compute_metrics, # This now gets set depending on which type of dataset is being evaluated
     )
-    t5_trainer.train()
+    t5_trainer.train(resume_from_checkpoint=True)
     t5_trainer.save_model()
