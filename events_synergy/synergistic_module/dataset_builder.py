@@ -1,18 +1,14 @@
-from datasets import Dataset, DatasetDict, concatenate_datasets
-from typing import List
-
-from pathlib import Path
 import json
 
-from tqdm import tqdm
-
+from datasets import concatenate_datasets, Dataset, DatasetDict
 from jinja2 import Template
-
-from ..task_constants import COREF_TEMPLATE, SUMMARIZATION_TEMPLATE
+from pathlib import Path
+from tqdm import tqdm
 from transformers import T5ForConditionalGeneration, T5Tokenizer
-from ..coreference.utils import get_mention_map
-from typing import Callable
+from typing import Callable, List
 
+from ..coreference.utils import get_mention_map
+from ..task_constants import COREF_TEMPLATE, SUMMARIZATION_TEMPLATE
 
 def generate_multitask_dataset(datasets: List[DatasetDict], dataset_names: List[str]):
     """
