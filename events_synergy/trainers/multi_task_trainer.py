@@ -318,9 +318,9 @@ def trainer_seq2seq_multi(
     t5_trainer.save_model()
 
 
-def preprocess_data(examples, tokenizer):
-    model_inputs = tokenizer(examples["prompt"], max_length=128, truncation=True)
+def preprocess_data(examples, tokenizer, max_length=128):
+    model_inputs = tokenizer(examples["prompt"], max_length=max_length, truncation=True)
     with tokenizer.as_target_tokenizer():
-        labels = tokenizer(examples["response"], max_length=128, truncation=True)
+        labels = tokenizer(examples["response"], max_length=max_length, truncation=True)
     model_inputs["labels"] = labels["input_ids"]
     return model_inputs
