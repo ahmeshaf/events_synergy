@@ -4,7 +4,7 @@ import json
 import numpy as np
 import torch
 
-from datasets import concatenate_datasets
+from datasets import concatenate_datasets, load_dataset
 from evaluate import load
 from pathlib import Path
 from torch import nn
@@ -19,6 +19,9 @@ from transformers import (
 )
 from transformers.utils import logging
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
+
+from ..synergistic_module.dataset_builder import generate_summarized_coreference_dataset
+from ..coreference.filtering.lemma_heuristic import LHFilterer
 
 if TYPE_CHECKING:
     from transformers.data.data_collator import DataCollator
@@ -45,6 +48,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         data_collator: Optional["DataCollator"] = None,
         train_dataset: Optional[Dataset] = None,
         eval_datasets: Optional[Dict[str, Union[Dataset, Dict[str, Dataset]]]] = None,
+        dataset_to_be_summarized: Optional[Dataset] = None,
         dataset2_is_rouge: Optional[Dict[str, bool]] = None,
         tokenizer: Optional["PreTrainedTokenizerBase"] = None,
         model_init: Optional[Callable[[], "PreTrainedModel"]] = None,
@@ -57,9 +61,16 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         preprocess_logits_for_metrics: Optional[
             Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
         ] = None,
+        summarize_after_epoch: bool = False,
+        backup_datasets: Dict[str, Dict[str, Dataset]] = None,
+        config_file: Path = None,
     ):
+        self.config_file = config_file
+        self.summarize_after_epoch = summarize_after_epoch
         self.eval_datasets = eval_datasets
         self.rouge = load("rouge")
+
+        self.backup_datasets = backup_datasets
 
         self.eval_is_rouge = dataset2_is_rouge
 
@@ -133,6 +144,11 @@ class MultiEvalTrainer(Seq2SeqTrainer):
                 )
             )
 
+        # Code to re-summarize after evaluation.
+        if self.summarize_after_epoch:
+            resummarize_ecb_datasets()
+
+
         return eval_scores
 
     def compute_prf(self, eval_pred):
@@ -190,6 +206,41 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         )
         return decoded_preds
 
+    def resummarize_ecb_datasets(self):
+        dataset_dict = load_dataset('ahmeshaf/ecb_plus_mentions')
+        lh_filterer = LHFilterer(dataset_dict["train"])
+        summarized_coref_dataset = generate_summarized_coreference_dataset(
+            self.config_file, self.model, self.tokenizer, dataset_dict, lh_filterer, men_type="evt"
+        )
+        self.backup_datasets['ecb'] = summarized_coref_dataset
+
+
+        train_dataset = concatenate_datasets(
+            [
+                pre_process_eos(dataset["train"], self.tokenizer.eos_token)
+                for dataset in self.backup_datasets.values()
+            ]
+        )
+
+        eval_datasets = {
+            dataset_name: (
+                pre_process_eos(dataset["dev"], self.tokenizer.eos_token)
+                if "dev" in dataset.keys()
+                else pre_process_eos(dataset["validation"], self.tokenizer.eos_token)
+            )
+            for dataset_name, dataset in self.backup_datasets.items()
+        }
+
+        train_tokenized = train_dataset.map(preprocess_data.with_args(self.tokenizer), batched=True)
+        evals_tokenized = {
+            dataset_name: eval_dataset.map(preprocess_data.with_args(self.tokenizer), batched=True)
+            for dataset_name, eval_dataset in eval_datasets.items()
+        }
+
+        self.train_dataset = train_tokenized
+        self.eval_datasets = evals_tokenized
+
+
 
 def trainer_seq2seq_multi(
     config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]]
@@ -225,16 +276,9 @@ def trainer_seq2seq_multi(
         for dataset_name, dataset in datasets_dict.items()
     }
 
-    def preprocess_data(examples):
-        model_inputs = tokenizer(examples["prompt"], max_length=128, truncation=True)
-        with tokenizer.as_target_tokenizer():
-            labels = tokenizer(examples["response"], max_length=128, truncation=True)
-        model_inputs["labels"] = labels["input_ids"]
-        return model_inputs
-
-    train_tokenized = train_dataset.map(preprocess_data, batched=True)
+    train_tokenized = train_dataset.map(preprocess_data.with_args(tokenizer), batched=True)
     evals_tokenized = {
-        dataset_name: eval_dataset.map(preprocess_data, batched=True)
+        dataset_name: eval_dataset.map(preprocess_data.with_args(tokenizer), batched=True)
         for dataset_name, eval_dataset in eval_datasets.items()
     }
 
@@ -266,7 +310,16 @@ def trainer_seq2seq_multi(
         eval_datasets=evals_tokenized,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        # compute_metrics=compute_metrics, # This now gets set depending on which type of dataset is being evaluated
+        backup_datasets=datasets_dict,
+        config_file=config_file
     )
     t5_trainer.train(resume_from_checkpoint=True)
     t5_trainer.save_model()
+
+
+def preprocess_data(examples, tokenizer):
+    model_inputs = tokenizer(examples["prompt"], max_length=128, truncation=True)
+    with tokenizer.as_target_tokenizer():
+        labels = tokenizer(examples["response"], max_length=128, truncation=True)
+    model_inputs["labels"] = labels["input_ids"]
+    return model_inputs
