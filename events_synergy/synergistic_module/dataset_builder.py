@@ -26,6 +26,7 @@ def generate_multitask_dataset(datasets: List[DatasetDict], dataset_names: List[
 
     return final_ds
 
+
 def generate_summarized_coreference_dataset(
     config_file: Path,
     model: T5ForConditionalGeneration,
