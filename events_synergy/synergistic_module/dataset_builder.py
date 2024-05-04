@@ -68,10 +68,10 @@ def generate_summarized_coreference_dataset(
             batch_input = resum_data['document'][i:i + batch_size]
 
             # Tokenize batch input
-            inputs = tokenizer(batch_input, return_tensors="pt", padding=True, truncation=True)
+            inputs = tokenizer(batch_input, return_tensors="pt", padding=True, truncation=True).to(model.device)
 
             # Generate output
-            outputs = model.generate(**inputs)
+            outputs = model.generate(**inputs, **config['generation'])
 
             # Decode output
             output_texts = tokenizer.batch_decode(outputs, skip_special_tokens=True)

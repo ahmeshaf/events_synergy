@@ -146,7 +146,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
 
         # Code to re-summarize after evaluation.
         if self.summarize_after_epoch:
-            resummarize_ecb_datasets()
+            self.resummarize_ecb_datasets()
 
 
         return eval_scores
@@ -231,9 +231,9 @@ class MultiEvalTrainer(Seq2SeqTrainer):
             for dataset_name, dataset in self.backup_datasets.items()
         }
 
-        train_tokenized = train_dataset.map(preprocess_data.with_args(self.tokenizer), batched=True)
+        train_tokenized = train_dataset.map(preprocess_data, batched=True, fn_kwargs={"tokenizer": self.tokenizer})
         evals_tokenized = {
-            dataset_name: eval_dataset.map(preprocess_data.with_args(self.tokenizer), batched=True)
+            dataset_name: eval_dataset.map(preprocess_data, batched=True, fn_kwargs={"tokenizer": self.tokenizer})
             for dataset_name, eval_dataset in eval_datasets.items()
         }
 
@@ -276,9 +276,9 @@ def trainer_seq2seq_multi(
         for dataset_name, dataset in datasets_dict.items()
     }
 
-    train_tokenized = train_dataset.map(preprocess_data.with_args(tokenizer), batched=True)
+    train_tokenized = train_dataset.map(preprocess_data, batched=True, fn_kwargs={"tokenizer": tokenizer})
     evals_tokenized = {
-        dataset_name: eval_dataset.map(preprocess_data.with_args(tokenizer), batched=True)
+        dataset_name: eval_dataset.map(preprocess_data, batched=True, fn_kwargs={"tokenizer": tokenizer})
         for dataset_name, eval_dataset in eval_datasets.items()
     }
 
@@ -311,7 +311,8 @@ def trainer_seq2seq_multi(
         tokenizer=tokenizer,
         data_collator=data_collator,
         backup_datasets=datasets_dict,
-        config_file=config_file
+        config_file=config_file,
+        summarize_after_epoch=config['summarize_after_epoch']
     )
     t5_trainer.train(resume_from_checkpoint=True)
     t5_trainer.save_model()
