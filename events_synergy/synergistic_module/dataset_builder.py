@@ -10,7 +10,6 @@ from typing import Callable, List
 from ..coreference.utils import get_mention_map
 from ..task_constants import COREF_TEMPLATE, SUMMARIZATION_TEMPLATE
 
-
 def generate_multitask_dataset(datasets: List[DatasetDict], dataset_names: List[str]):
     """
     :return: DatasetDict of the form ds['train], ds['validation_{task}'], ds['test_{task}']
