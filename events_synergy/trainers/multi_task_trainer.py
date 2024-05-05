@@ -240,7 +240,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
 def trainer_seq2seq_multi(
         config_file: Path,
         datasets_dict: Dict[str, Dict[str, Dataset]],
-        summarization_config_file: Optional[Path] = None  # Config specifically for re-summarization
+        summarization_config_file: Path  # Config specifically for re-summarization
 ):
     """
 
@@ -255,8 +255,8 @@ def trainer_seq2seq_multi(
     summarization_config_file
     """
     config = json.load(open(config_file))
-    # print(dataset_names)
-    # datasets_dict = {d_name: load_dataset(d_name) for d_name in dataset_names}
+
+    summ_config = json.load(open(summarization_config_file))
 
     model_name_or_path = config.pop("model_name_or_path")
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
@@ -279,9 +279,15 @@ def trainer_seq2seq_multi(
         for dataset_name, dataset in datasets_dict.items()
     }
 
-    train_tokenized = train_dataset.map(preprocess_data, batched=True, fn_kwargs={"tokenizer": tokenizer})
+    train_tokenized = train_dataset.map(preprocess_data, batched=True, fn_kwargs={"tokenizer": tokenizer,
+                                                                                  "max_length":
+                                                                                      summ_config['generation'][
+                                                                                          'max_length']})
     evals_tokenized = {
-        dataset_name: eval_dataset.map(preprocess_data, batched=True, fn_kwargs={"tokenizer": tokenizer})
+        dataset_name: eval_dataset.map(preprocess_data, batched=True, fn_kwargs={"tokenizer": tokenizer,
+                                                                                 "max_length":
+                                                                                     summ_config['generation'][
+                                                                                         'max_length']})
         for dataset_name, eval_dataset in eval_datasets.items()
     }
 
