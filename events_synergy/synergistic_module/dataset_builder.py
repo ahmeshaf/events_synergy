@@ -1,17 +1,14 @@
-from datasets import Dataset, DatasetDict, concatenate_datasets
-from typing import List
-
-from pathlib import Path
 import json
 
-from tqdm import tqdm
-
+from datasets import concatenate_datasets, Dataset, DatasetDict
 from jinja2 import Template
-
-from ..task_constants import COREF_TEMPLATE, SUMMARIZATION_TEMPLATE
+from pathlib import Path
+from tqdm import tqdm
 from transformers import T5ForConditionalGeneration, T5Tokenizer
+from typing import Callable, List
+
 from ..coreference.utils import get_mention_map
-from typing import Callable
+from ..task_constants import COREF_TEMPLATE, SUMMARIZATION_TEMPLATE
 
 
 def generate_multitask_dataset(datasets: List[DatasetDict], dataset_names: List[str]):
@@ -30,14 +27,15 @@ def generate_multitask_dataset(datasets: List[DatasetDict], dataset_names: List[
 
     return final_ds
 
+
 def generate_summarized_coreference_dataset(
-    config_file: Path,
-    model: T5ForConditionalGeneration,
-    tokenizer: T5Tokenizer,
-    mention_dataset_dict: DatasetDict,
-    filterer: Callable,
-    text_key="marked_document",
-    men_type: str = "evt",
+        config_file: Path,
+        model: T5ForConditionalGeneration,
+        tokenizer: T5Tokenizer,
+        mention_dataset_dict: DatasetDict,
+        filterer: Callable,
+        text_key="marked_document",
+        men_type: str = "evt",
 ):
     """
 
@@ -49,16 +47,18 @@ def generate_summarized_coreference_dataset(
     """
     config = json.load(open(config_file))
 
-    template = Template(COREF_TEMPLATE)
+    coref_template = Template(COREF_TEMPLATE)
+    summarization_template = Template(SUMMARIZATION_TEMPLATE)
     splits = list(mention_dataset_dict)
     split2dataset = {}
     for split in splits:
         mention_map = get_mention_map(mention_dataset_dict[split], men_type)
 
-        resum_data = {'document': [mention_map[k]['marked_doc'] for k in mention_map.keys()],
-                      'id': [k for k in mention_map.keys()]
-                      }
-        batch_size = config['trainer']['per_device_eval_batch_size']
+        resum_data = {
+            'document': [summarization_template.render(mention_map[k]['marked_doc']) for k in mention_map.keys()],
+            'id': [k for k in mention_map.keys()]
+            }
+        batch_size = config['batch_size']
 
         summaries = []
 
@@ -88,7 +88,7 @@ def generate_summarized_coreference_dataset(
             mention_1 = mention_map[m1]
             mention_2 = mention_map[m2]
 
-            prompt = template.render(
+            prompt = coref_template.render(
                 mention_text_1=mention_1["mention_text"],
                 mention1_context=mention_1['summary'],
                 mention_text_2=mention_2["mention_text"],

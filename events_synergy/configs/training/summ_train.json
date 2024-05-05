@@ -22,6 +22,5 @@
         "num_beams": 2,
         "max_length": 512
     },
-    "optimizer": {"lr": 5e-5, "eps": 1e-8},
-    "summarize_after_epoch": true
+    "optimizer": {"lr": 5e-5, "eps": 1e-8}
 }
