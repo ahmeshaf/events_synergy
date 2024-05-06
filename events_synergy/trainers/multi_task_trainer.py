@@ -268,5 +268,5 @@ def trainer_seq2seq_multi(
         data_collator=data_collator,
         # compute_metrics=compute_metrics, # This now gets set depending on which type of dataset is being evaluated
     )
-    t5_trainer.train(resume_from_checkpoint=True)
+    t5_trainer.train()
     t5_trainer.save_model()

@@ -1,7 +1,7 @@
 {
     "model_name_or_path": "google/flan-t5-large",
     "trainer": {
-        "output_dir": "/home/models/",
+        "output_dir": "/home/models/flan_ecb_tagger_large/",
         "num_train_epochs": 100,
         "per_device_train_batch_size": 8,
         "per_device_eval_batch_size": 16,
@@ -14,7 +14,7 @@
         "learning_rate": 5e-5,
         "save_total_limit": 1,
         "seed": 42,
-        "resume_from_checkpoint": true
+        "resume_from_checkpoint": false
     },
     "generation": {
         "max_new_tokens": 128,
