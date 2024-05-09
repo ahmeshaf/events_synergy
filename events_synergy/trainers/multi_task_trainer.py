@@ -322,7 +322,7 @@ def trainer_seq2seq_multi(
         backup_datasets=datasets_dict,
         summarization_config_file=summarization_config_file
     )
-    t5_trainer.train(resume_from_checkpoint=True)
+    t5_trainer.train()
     t5_trainer.save_model()
 
 
