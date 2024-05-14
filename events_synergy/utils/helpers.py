@@ -1,3 +1,8 @@
+import regex
+import re
+
+from difflib import SequenceMatcher
+
 
 def find_word_offsets(sentence, words):
     # Initialize a list to store the results
@@ -22,3 +27,43 @@ def find_word_offsets(sentence, words):
             offsets.append(None)
 
     return offsets
+
+
+def find_best_match(sentence, phrase, claimed_ranges):
+    # Adjust the regex to consider word boundaries. The \b ensures that we match whole words
+    # but only where it makes sense based on the phrase itself.
+    pattern = (
+        r"\b%s\b" % regex.escape(phrase)
+        if phrase[0].isalnum() and phrase[-1].isalnum()
+        else r"%s" % regex.escape(phrase)
+    )
+    matches = regex.finditer(f"({pattern}){{e<=3}}", sentence, overlapped=True)
+    best_match = None
+    highest_ratio = 0.0
+
+    for match in matches:
+        start, end = match.span()
+        # Exclude matches that overlap with claimed ranges
+        if not any(
+            start < cr_end and end > cr_start for cr_start, cr_end in claimed_ranges
+        ):
+            match_ratio = SequenceMatcher(None, match.group(), phrase).ratio()
+            if match_ratio > highest_ratio:
+                highest_ratio = match_ratio
+                best_match = match
+
+    return best_match
+
+
+def find_phrase_offsets_fuzzy(sentence, phrases):
+    results = []
+    claimed_ranges = []
+    for phrase in phrases:
+        match = find_best_match(sentence, phrase, claimed_ranges)
+        if match:
+            start, end = match.span()
+            # Claim this range
+            claimed_ranges.append((start, end))
+            results.append((match.group(), start, end))
+    return results
+
