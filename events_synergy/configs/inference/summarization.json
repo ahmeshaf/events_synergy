@@ -1,0 +1,11 @@
+{
+    "model_name_or_path": "/media/rehan/big_disk/models/kairos/ecb/multi/",
+    "generation": {
+        "max_length": 512,
+        "early_stopping": true,
+        "min_new_tokens": 2,
+        "num_beams": 2
+    },
+    "optimizer": {"lr": 5e-5, "eps": 1e-8},
+    "batch_size" : 256
+}

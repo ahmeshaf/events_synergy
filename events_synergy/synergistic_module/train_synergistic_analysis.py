@@ -29,7 +29,7 @@ def train(config_file: Path, dataset_names: List[str]):
             )
             datasetdicts['ecb'] = coref_dataset
 
-    #dataset_dict = generate_multitask_dataset(datasetdicts, dataset_names)
+    # dataset_dict = generate_multitask_dataset(datasetdicts, dataset_names)
 
     trainer_seq2seq_multi(
         config_file,
