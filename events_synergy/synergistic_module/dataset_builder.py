@@ -10,6 +10,12 @@ from typing import Callable, List
 from ..coreference.utils import get_mention_map
 from ..task_constants import COREF_TEMPLATE, SUMMARIZATION_TEMPLATE
 
+import pathlib
+
+import wandb
+
+RESUMMARIZATION_SAVES_DIR = (pathlib.Path(__file__).parent.parent / "data/resummarization_saves").resolve()
+
 def generate_multitask_dataset(datasets: List[DatasetDict], dataset_names: List[str]):
     """
     :return: DatasetDict of the form ds['train], ds['validation_{task}'], ds['test_{task}']
@@ -35,6 +41,8 @@ def generate_summarized_coreference_dataset(
         filterer: Callable,
         text_key="marked_document",
         men_type: str = "evt",
+        save_to_wandb: bool = False,
+        epoch = 0
 ):
     """
 
@@ -54,7 +62,7 @@ def generate_summarized_coreference_dataset(
         mention_map = get_mention_map(mention_dataset_dict[split], men_type)
 
         resum_data = {
-            'document': [summarization_template.render(mention_map[k]['marked_doc']) for k in mention_map.keys()],
+            'document': [summarization_template.render(document=mention_map[k]['marked_doc']) for k in mention_map.keys()],
             'id': [k for k in mention_map.keys()]
             }
         batch_size = config['batch_size']
@@ -80,6 +88,12 @@ def generate_summarized_coreference_dataset(
 
         for i, k in enumerate(mention_map.keys()):
             mention_map[k]['summary'] = summaries[i]
+
+        if save_to_wandb:
+            with open(RESUMMARIZATION_SAVES_DIR / f"mention_map_epoch_{epoch}.json", "w") as f:
+                json.dump(mention_map.to_json(), f)
+
+            wandb.save(RESUMMARIZATION_SAVES_DIR / f"mention_map_epoch_{epoch}.json")
 
         mention_pairs_dataset = filterer(mention_map)
         prompt_responses = []

@@ -11,4 +11,4 @@ Coreference:
 <m> {{ mention_text_2 }} </m> in {{ mention2_context }}
 """
 
-SUMMARIZATION_TEMPLATE = "Summarize the following article:\n\n{{document}}"
+SUMMARIZATION_TEMPLATE = r"Summarize the following article:\n\n{{document}}"

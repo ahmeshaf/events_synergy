@@ -1,6 +1,6 @@
 from pathlib import Path
 from typer import Typer
-from typing import List
+from typing import List, Optional
 
 from ..trainers.multi_task_trainer import trainer_seq2seq_multi
 from .dataset_builder import generate_multitask_dataset
@@ -14,7 +14,7 @@ app = Typer()
 
 
 @app.command()
-def train(config_file: Path, dataset_names: List[str]):
+def train(config_file: Path, dataset_names: List[str], summarization_specific_config_file: Optional[Path] = None):
     dataset_names = list(set(dataset_names))
     datasetdicts = {}
 
@@ -34,6 +34,7 @@ def train(config_file: Path, dataset_names: List[str]):
     trainer_seq2seq_multi(
         config_file,
         datasetdicts,
+        summarization_specific_config_file
     )
 
 

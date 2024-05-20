@@ -144,7 +144,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
 
         # Code to re-summarize after evaluation.
         if self.summarize_after_epoch:
-            self.resummarize_ecb_datasets()
+            self.resummarize_ecb_datasets(eval_scores['epoch'])
 
         return eval_scores
 
@@ -203,11 +203,25 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         )
         return decoded_preds
 
-    def resummarize_ecb_datasets(self):
+    def resummarize_ecb_datasets(self, epoch):
         dataset_dict = load_dataset('ahmeshaf/ecb_plus_mentions')
         lh_filterer = LHFilterer(dataset_dict["train"])
+        summ_config = json.load(open(self.summarization_config_file))["trainer"]
+
+        save_to_wandb = False
+        if "report_to" in summ_config["trainer"].keys():
+            if summ_config["trainer"]["report_to"] == "wandb":
+                save_to_wandb = True
+
         summarized_coref_dataset = generate_summarized_coreference_dataset(
-            self.summarization_config_file, self.model, self.tokenizer, dataset_dict, lh_filterer, men_type="evt"
+            self.summarization_config_file,
+            self.model,
+            self.tokenizer,
+            dataset_dict,
+            lh_filterer,
+            men_type="evt",
+            save_to_wandb=save_to_wandb,
+            epoch=epoch
         )
         self.backup_datasets['ecb'] = summarized_coref_dataset
 
@@ -240,7 +254,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
 def trainer_seq2seq_multi(
         config_file: Path,
         datasets_dict: Dict[str, Dict[str, Dataset]],
-        summarization_config_file: Path  # Config specifically for re-summarization
+        summarization_config_file: Optional[Path] = None  # Config specifically for re-summarization
 ):
     """
 
@@ -281,12 +295,12 @@ def trainer_seq2seq_multi(
 
     train_tokenized = train_dataset.map(preprocess_data, batched=True, fn_kwargs={"tokenizer": tokenizer,
                                                                                   "max_length":
-                                                                                      summ_config['generation'][
+                                                                                      config['generation'][
                                                                                           'max_length']})
     evals_tokenized = {
         dataset_name: eval_dataset.map(preprocess_data, batched=True, fn_kwargs={"tokenizer": tokenizer,
                                                                                  "max_length":
-                                                                                     summ_config['generation'][
+                                                                                     config['generation'][
                                                                                          'max_length']})
         for dataset_name, eval_dataset in eval_datasets.items()
     }
