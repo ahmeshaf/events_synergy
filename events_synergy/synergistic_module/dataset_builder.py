@@ -11,6 +11,9 @@ from ..coreference.utils import get_mention_map
 from ..task_constants import COREF_TEMPLATE, SUMMARIZATION_TEMPLATE
 
 import pathlib
+import os
+
+import numpy as np
 
 import wandb
 
@@ -90,10 +93,11 @@ def generate_summarized_coreference_dataset(
             mention_map[k]['summary'] = summaries[i]
 
         if save_to_wandb:
-            with open(RESUMMARIZATION_SAVES_DIR / f"mention_map_epoch_{epoch}.json", "w") as f:
-                json.dump(mention_map.to_json(), f)
+            os.makedirs(RESUMMARIZATION_SAVES_DIR, exist_ok=True)
+            with open(RESUMMARIZATION_SAVES_DIR / f"mention_map_{split}_epoch_{epoch}.json", "w") as f:
+                json.dump(mention_map, f, cls=json_serialize)
 
-            wandb.save(RESUMMARIZATION_SAVES_DIR / f"mention_map_epoch_{epoch}.json")
+            wandb.save(RESUMMARIZATION_SAVES_DIR / f"mention_map_{split}_epoch_{epoch}.json")
 
         mention_pairs_dataset = filterer(mention_map)
         prompt_responses = []
@@ -119,3 +123,14 @@ def generate_summarized_coreference_dataset(
         split2dataset[split] = Dataset.from_list(prompt_responses)
 
     return DatasetDict(split2dataset)
+
+# Custom JSON encoder for handling NP objects in the mention map
+class json_serialize(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return json.JSONEncoder.default(self, obj)

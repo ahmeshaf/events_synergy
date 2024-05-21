@@ -206,7 +206,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
     def resummarize_ecb_datasets(self, epoch):
         dataset_dict = load_dataset('ahmeshaf/ecb_plus_mentions')
         lh_filterer = LHFilterer(dataset_dict["train"])
-        summ_config = json.load(open(self.summarization_config_file))["trainer"]
+        summ_config = json.load(open(self.summarization_config_file))
 
         save_to_wandb = False
         if "report_to" in summ_config["trainer"].keys():
