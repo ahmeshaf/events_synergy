@@ -88,3 +88,26 @@ lep job create \
     4. gpu.h100-pcie : $3.9/hr 
     5. gpu.h100-sxm : $4.2/hr
 
+## Running with runpod.io
+
+- Install the required packages:
+
+```shell
+pip install -U runpod
+runpod config
+```
+
+- Launch a pod with runpod.io
+
+```shell
+python -m events_synergy.runpod test_a40 --gpu-type-id "NVIDIA A40"
+```
+
+`--gpu-type-id` can be the following:
+    
+    1. NVIDIA A30
+    2. NVIDIA A40
+    3. NVIDIA A100 40GB
+    4. NVIDIA A100 80GB
+    5. NVIDIA H100 PCIe
+    6. NVIDIA H100 SXM
