@@ -191,16 +191,31 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         return decoded_preds
 
 
+def update_config_dict(config, kwargs):
+    # Update the config dictionary with the kwargs recursively
+    for v in config.values():
+        if isinstance(v, dict):
+            update_config_dict(v, kwargs)
+        else:
+            for k, val in kwargs.items():
+                if k in config:
+                    config[k] = type(config[k])(val)
+
+
 def trainer_seq2seq_multi(
-    config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]]
+    config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]], **kwargs
 ):
     """
 
     :param config_file:
     :param datasets_dict: Dictionary of Dictionaries of datasets. Outer Dict = task, Inner Dict = split
+    :param kwargs: additional arguments to update config_file dictionary
     :return:
     """
     config = json.load(open(config_file))
+
+    update_config_dict(config, kwargs)
+
     # print(dataset_names)
     # datasets_dict = {d_name: load_dataset(d_name) for d_name in dataset_names}
 
@@ -226,9 +241,16 @@ def trainer_seq2seq_multi(
     }
 
     def preprocess_data(examples):
-        model_inputs = tokenizer(examples["prompt"], max_length=128, truncation=True)
+        model_inputs = tokenizer(
+            examples["prompt"],
+            max_length=config["max_input_length"],
+            truncation=True
+        )
         with tokenizer.as_target_tokenizer():
-            labels = tokenizer(examples["response"], max_length=128, truncation=True)
+            labels = tokenizer(
+                examples["response"],
+                truncation=True,
+            )
         model_inputs["labels"] = labels["input_ids"]
         return model_inputs
 

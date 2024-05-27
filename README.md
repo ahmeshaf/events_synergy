@@ -3,6 +3,7 @@
 ## Table of Contents
 - [Getting Started](#getting-started)
 - [Event Tagging](#event-tagging)
+- [Semantic Role Labeling](#semantic-role-labeling)
 - [Event Coreference](#event-coreference)
 - [Event Summarization](#event-summarization)
 
@@ -15,24 +16,29 @@ pip install -r requirements.txt
 
 ## Event Tagging
 ### Data Format
-Check out the huggingface dataset at [ahemshaf/ecb_plus_mentions](https://huggingface.co/datasets/ahmeshaf/ecb_plus_mentions)
+Check out the huggingface dataset at [ahmeshaf/ecb_plus_mentions](https://huggingface.co/datasets/ahmeshaf/ecb_plus_mentions)
 
 ### Training
 ```shell
 python -m events_synergy.event_tagging.train_event_tagger \
         ./events_synergy/configs/training/t5_train.json \
-        ahemshaf/ecb_plus_mentions
+        ahmeshaf/ecb_plus_mentions
 ```
+
+## Semantic Role Labeling
+### Data Format
+Check out the huggingface dataset at [cu-kairos/propbank_srl_seq2seq](https://huggingface.co/datasets/cu-kairos/propbank_srl_seq2seq)
+
 
 ## Event Coreference
 ### Data Format
-Check out the huggingface dataset at [ahemshaf/ecb_plus_mentions](https://huggingface.co/datasets/ahmeshaf/ecb_plus_mentions)
+Check out the huggingface dataset at [ahmeshaf/ecb_plus_mentions](https://huggingface.co/datasets/ahmeshaf/ecb_plus_mentions)
 
 ### Training
 ```shell
 python -m events_synergy.coreference.train_coref_resolver \
         ./events_synergy/configs/training/t5_train.json \
-        ahemshaf/ecb_plus_mentions
+        ahmeshaf/ecb_plus_mentions
         --men-type evt
 ```
 

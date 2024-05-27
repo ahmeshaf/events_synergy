@@ -10,13 +10,45 @@ from ..events_pipeline import get_model_tokenizer_generation_config
 def generate_srl_prompts(sentences, sentences_triggers):
     for i, (sentence, triggers) in enumerate(zip(sentences, sentences_triggers)):
         for trigger in triggers:
-            sentence = (
-                sentence[: trigger[1][0]]
-                + f"[{trigger[0]}]"
-                + sentence[trigger[1][1]:]
-            )
+            (trigger_txt, (start, end)) = trigger
+            sentence = sentence[:start] + f"[{trigger_txt}]" + sentence[end:]
             srl_prompt = f"SRL for [{trigger[0]}]: {sentence}"
             yield i, trigger, srl_prompt
+
+
+def srl_predicted_triggers(sentences, triggers, srl_model, batch_size):
+    srl_prompts = list(generate_srl_prompts(sentences, triggers))
+
+    s_ids, flattened_triggers, srl_prompts = zip(*srl_prompts)
+
+    model_s, tokenizer_s, generation_config_s = get_model_tokenizer_generation_config(
+        srl_model
+    )
+
+    srl_pipe = pipeline("text2text-generation", model=srl_model)
+    outputs = srl_pipe(srl_prompts, batch_size=batch_size, **generation_config_s)
+
+    s_id2srl = {}
+
+    for i, trigger, output in zip(s_ids, flattened_triggers, outputs):
+        if i not in s_id2srl:
+            s_id2srl[i] = []
+
+        s_id2srl[i].append((trigger, output["generated_text"]))
+
+    s_id2srl = sorted(s_id2srl.items(), key=lambda x: x[0])
+    sentence_srls = [srl for _, srl in s_id2srl]
+
+    triggers_srls_offsets = []
+
+    for sentence_srl in sentence_srls:
+        curr_triggers_srls_offsets = []
+        for trigger, str_srl in sentence_srl:
+            arg_srls = [tuple(arg.split(": ")) for arg in str_srl.split(" | ")]
+            curr_triggers_srls_offsets.append((trigger, arg_srls))
+        triggers_srls_offsets.append(curr_triggers_srls_offsets)
+
+    return triggers_srls_offsets
 
 
 def semantic_role_labeler(
@@ -33,37 +65,4 @@ def semantic_role_labeler(
         sentences, model_t, tokenizer_t, generation_config_t, batch_size
     )
 
-    srl_prompts = list(generate_srl_prompts(sentences, triggers))
-
-    s_ids, flattened_triggers, srl_prompts = zip(*srl_prompts)
-
-    model_s, tokenizer_s, generation_config_s = get_model_tokenizer_generation_config(
-        srl_model
-    )
-
-    # srl_pipeline = pipeline("text2text-generation", model=model_s, tokenizer=tokenizer_s, framework="pt", device="cuda")
-
-    tokenized_inputs = tokenizer_s(list(srl_prompts), truncation=True, padding=True, return_tensors="pt")
-    outputs = model_s.generate(**tokenized_inputs, generation_config=generation_config_s)
-
-    s_id2srl = {}
-
-    for i, trigger, output in zip(s_ids, flattened_triggers, outputs):
-        if i not in s_id2srl:
-            s_id2srl[i] = []
-
-        s_id2srl[i].append((trigger, tokenizer_s.decode(output, skip_special_tokens=True)))
-
-    s_id2srl = sorted(s_id2srl.items(), key=lambda x: x[0])
-    sentence_srls = [srl for _, srl in s_id2srl]
-
-    triggers_srls_offsets = []
-
-    for sentence_srl in sentence_srls:
-        curr_triggers_srls_offsets = []
-        for trigger, str_srl in sentence_srl:
-            arg_srls = [tuple(arg.split(": ")) for arg in str_srl.split(" | ")]
-            curr_triggers_srls_offsets.append((trigger, arg_srls))
-        triggers_srls_offsets.append(curr_triggers_srls_offsets)
-
-    return triggers_srls_offsets
+    return srl_predicted_triggers(sentences, triggers, srl_model, batch_size)

@@ -1,9 +1,10 @@
 {
-    "model_name_or_path": "google/flan-t5-large",
+    "model_name_or_path": "google/flan-t5-xl",
+    "max_input_length": 2048,
     "trainer": {
         "output_dir": "/home/models/flan_ecb_tagger_large/",
-        "num_train_epochs": 100,
-        "per_device_train_batch_size": 8,
+        "num_train_epochs": 128,
+        "per_device_train_batch_size": 1,
         "per_device_eval_batch_size": 16,
         "warmup_steps": 50,
         "weight_decay": 0.01,

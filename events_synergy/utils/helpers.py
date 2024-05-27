@@ -67,3 +67,19 @@ def find_phrase_offsets_fuzzy(sentence, phrases):
             results.append((match.group(), start, end))
     return results
 
+
+def parse_kv(kv: str) -> dict:
+    """
+    Parses a string of key-value pairs separated by commas and ensures proper format.
+    Raises ValueError if the format is incorrect.
+    """
+    kv_dict = {}
+    pairs = kv.split(",")
+    for item in pairs:
+        if "=" not in item:
+            raise ValueError("Each key-value pair must contain an '='.")
+        key, value = item.split("=", 1)  # Split only on the first '=', allowing for '=' in values
+        if not key.strip() or not value.strip():
+            raise ValueError("Both key and value must be non-empty and not just whitespace.")
+        kv_dict[key.strip()] = value.strip()
+    return kv_dict
