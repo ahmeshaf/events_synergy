@@ -52,3 +52,39 @@ python -m events_synergy.summarization.train_summarizer \
         ./events_synergy/configs/training/summ_train.json \
         xsum
 ```
+
+## Running with Lepton.ai
+- Install the required packages:
+
+```shell
+pip install -U leptonai
+lep login
+```
+
+- Train SRL with Lepton.ai
+
+```shell
+export TRAIN_COMMANDS='cd /home/workspace/events_synergy \n
+git pull \n
+pip install . \n
+chmod +x ./scripts/train_srl.sh \n
+./scripts/train_srl.sh'
+```
+```shell
+lep job create \
+--resource-shape gpu.a10 \
+--completions 1 \
+--parallelism 1 \
+--container-image default/lepton:photon-py3.11-runner-0.15.0 \
+--command "$TRAIN_COMMANDS" \
+--intra-job-communication=true \
+--name train-srl-1
+```
+`--resource-shape` can be the following:
+    
+    1. gpu.a10 : $1.22/hr
+    2. gpu.a100-40gb : $3.048/hr
+    3. gpu.a100-80gb : $3.21/hr
+    4. gpu.h100-pcie : $3.9/hr 
+    5. gpu.h100-sxm : $4.2/hr
+
