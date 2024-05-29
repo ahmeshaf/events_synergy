@@ -78,7 +78,7 @@ def evaluate(
     men_type: str = "evt",
     batch_size: int = 32,
 ) -> dict:
-    dataset_dict = load_dataset(mention_dataset_name, token="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")
+    dataset_dict = load_dataset(mention_dataset_name)
     # each record is a prompt sentence with triggers or entities ("run | jump")
     split_dataset = dataset_dict[split]
 
