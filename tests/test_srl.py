@@ -2,7 +2,7 @@
 
 import os
 
-from events_synergy.srl.semantic_role_labeler import semantic_role_labeler
+from events_synergy.srl.srler import semantic_role_labeler
 
 
 def test_semantic_role_labeler():
@@ -14,10 +14,13 @@ def test_semantic_role_labeler():
 
     srl_ = semantic_role_labeler(sentences)
 
-    print(srl_[0][1][0])
-
     assert len(srl_) == 2     # two sentences
     assert len(srl_[0]) == 2  # "jumps" and "hunts"
     assert len(srl_[1]) == 1  # "jumps"
-    assert srl_[0][0][0] == ("jumps", (20, 25))
-    assert srl_[0][1][0] == ("hunt", (53, 57))
+    assert srl_[0][0][0][-1] == ("jumps", 20, 25)
+    assert srl_[0][1][0][-1] == ("hunt", 53, 57)
+
+    # check the arguments
+    assert len(srl_[0][0][1]) == 2
+    assert len(srl_[0][1][1]) == 2
+    assert srl_[0][0][1][0] == ("ARG-0", "The quick brown fox", ("The quick brown fox", 0, 19))

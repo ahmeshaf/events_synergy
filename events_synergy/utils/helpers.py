@@ -83,3 +83,18 @@ def parse_kv(kv: str) -> dict:
             raise ValueError("Both key and value must be non-empty and not just whitespace.")
         kv_dict[key.strip()] = value.strip()
     return kv_dict
+
+
+def get_prf(gold_tags: list, predicted_tags: list):
+    # convert to sets
+    gold_tags_set = set(gold_tags)
+    predicted_tags_set = set(predicted_tags)
+    # calculate true positives
+    true_positives = len(gold_tags_set.intersection(predicted_tags_set))
+    # calculate precision
+    precision = true_positives / len(predicted_tags_set) if len(predicted_tags_set) > 0 else 0
+    # calculate recall
+    recall = true_positives / len(gold_tags_set) if len(gold_tags_set) > 0 else 0
+    # calculate f1
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+    return {"precision": precision, "recall": recall, "f1": f1}

@@ -6,7 +6,7 @@ from typing import Optional, List
 
 from ...coreference.dataset_builder import generate_coref_dataset
 from ...coreference.filtering.lemma_heuristic import LHFilterer
-from ...event_tagging.dataset_builder import make_tagger_dataset
+from ...event_tagging.dataset_builder import make_tagger_dataset_dict
 from ...trainers.multi_task_trainer import trainer_seq2seq_multi
 
 app = Typer()
@@ -24,7 +24,7 @@ def train(
 
     if tagger_mention_datasets:
         for ds_name in tagger_mention_datasets:
-            dataset_dicts[ds_name] = make_tagger_dataset(ds_name)
+            dataset_dicts[ds_name] = make_tagger_dataset_dict(ds_name)
     if coref_mention_datasets:
         if filterer == "lh":
             for ds in coref_mention_datasets:
