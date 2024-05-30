@@ -14,7 +14,7 @@ class DynamicMultiEvalTrainer(MultiEvalTrainer):
         self.static_train_dataset = static_train_dataset
         self.static_eval_datasets = static_eval_datasets
 
-        super(MultiEvalTrainer).__init__(
+        super(DynamicMultiEvalTrainer).__init__(
             **kwargs
         )
 
@@ -27,7 +27,7 @@ class DynamicMultiEvalTrainer(MultiEvalTrainer):
         Evaluate the model on the evaluation datasets.
         """
         self.generate_static_dynamic_datasets()
-        eval_scores = super(MultiEvalTrainer).evaluate(**kwargs)
+        eval_scores = super(DynamicMultiEvalTrainer).evaluate(**kwargs)
 
         return eval_scores
 
