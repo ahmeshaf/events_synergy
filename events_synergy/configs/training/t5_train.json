@@ -1,34 +1,29 @@
 {
-    "model_name_or_path": "google/flan-t5-xl",
-    "max_input_length": 2048,
+    "model_name_or_path": "google/flan-t5-large",
+    "max_input_length": 512,
     "trainer": {
-        "output_dir": "/home/models/flan_ecb_tagger_large/",
-        "num_train_epochs": 128,
-        "per_device_train_batch_size": 1,
-        "per_device_eval_batch_size": 16,
-        "warmup_steps": 50,
+        "output_dir": "./outputs/flan_all_srl_tagger_large/",
+        "num_train_epochs": 20,
+        "per_device_train_batch_size": 16,
+        "per_device_eval_batch_size": 32,
+        "warmup_steps": 500,
         "weight_decay": 0.01,
-        "logging_steps": 400,
+        "logging_steps": 1000,
         "evaluation_strategy": "steps",
-        "eval_steps": 50000,
+        "eval_steps": 10000,
         "predict_with_generate": true,
         "learning_rate": 5e-5,
         "save_total_limit": 1,
         "seed": 42,
-<<<<<<< Updated upstream
-        "resume_from_checkpoint": false
-=======
-        "resume_from_checkpoint": true,
-        "report_to":"wandb",
-        "run_name":"bert-base-high-lr"
->>>>>>> Stashed changes
+        "run_name": "all_srl_tagger_large_peft",
+        "prediction_loss_only": true
     },
     "generation": {
-        "max_new_tokens": 128,
+        "max_new_tokens": 256,
         "early_stopping": true,
         "min_new_tokens": 2,
         "num_beams": 2,
-        "max_length": 128
+        "max_length": 512
     },
     "optimizer": {"lr": 5e-5, "eps": 1e-8}
 }

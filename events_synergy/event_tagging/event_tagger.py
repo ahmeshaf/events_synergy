@@ -2,12 +2,19 @@ from datasets import load_dataset, Dataset
 from tqdm import tqdm
 from transformers import pipeline
 from transformers.pipelines.pt_utils import KeyDataset
+from typer import Typer
 from typing import List
 
 from .dataset_builder import get_tagger_dataset
-from ..events_pipeline import EventsPipeline, pipe
+from ..events_pipeline import (
+    EventsPipeline,
+    pipe,
+    get_model_tokenizer_generation_config,
+)
 from ..task_constants import TRIGGERS_PREFIX
 from ..utils.helpers import find_word_offsets, find_phrase_offsets_fuzzy, get_prf
+
+app = Typer()
 
 
 def event_tagger(
@@ -35,31 +42,42 @@ def event_tagger_pipeline(triggers_pipeline, sentences, batch_size=8):
     return trigger_offsets
 
 
-def tag_with_prompts(tagger_model_name, prompts, batch_size=32):
+def tag_with_prompts(tagger_model_name, prompts, batch_size=32, is_peft=False):
     tagger_dataset = Dataset.from_dict({"prompt": prompts})
-    tagger_pipe = pipeline("text2text-generation", tagger_model_name, device_map="auto")
+    model, tokenizer, generation_config = get_model_tokenizer_generation_config(
+        tagger_model_name, is_peft
+    )
+    tagger_pipe = pipeline(
+        "text2text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        generation_config=generation_config,
+        device_map="auto",
+    )
     tagger_out = []
     for out in tqdm(
-            tagger_pipe(KeyDataset(tagger_dataset, "prompt"), batch_size=batch_size),
-            total=len(prompts),
-            desc="Tagging",
+        tagger_pipe(KeyDataset(tagger_dataset, "prompt"), batch_size=batch_size),
+        total=len(prompts),
+        desc="Tagging",
     ):
         tagger_out.append(out[0]["generated_text"])
     return tagger_out
 
 
+@app.command()
 def tagger(
     tagger_model_name: str,
     sentences: List[str],
     men_type: str = "evt",
     batch_size: int = 32,
+    is_peft: bool = False,
 ):
     if men_type == "ent":
         prompts = [f"entities: {sentence}" for sentence in sentences]
     else:
         prompts = [f"triggers: {sentence}" for sentence in sentences]
 
-    tagger_out = tag_with_prompts(tagger_model_name, prompts, batch_size)
+    tagger_out = tag_with_prompts(tagger_model_name, prompts, batch_size, is_peft)
 
     predicted_mentions = []
 
@@ -71,6 +89,7 @@ def tagger(
     return predicted_mentions
 
 
+@app.command()
 def evaluate(
     tagger_model_name: str,
     mention_dataset_name: str,
@@ -112,4 +131,5 @@ def evaluate(
 
 
 if __name__ == "__main__":
-    evaluate("ahmeshaf/ecb_tagger_seq2seq", "ahmeshaf/conll_05_mentions", "validation")
+    # evaluate("ahmeshaf/ecb_tagger_seq2seq", "ahmeshaf/conll_05_mentions", "validation")
+    app()

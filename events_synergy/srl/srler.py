@@ -19,18 +19,20 @@ def generate_srl_prompts(sentences, sentences_triggers):
             yield i, trigger, srl_prompt, sentence
 
 
-def srl_predicted_triggers(sentences, triggers, srl_model, batch_size):
+def srl_predicted_triggers(
+    sentences, triggers, srl_model, batch_size, is_srl_peft=False
+):
     srl_prompts = list(generate_srl_prompts(sentences, triggers))
 
     s_ids, flattened_triggers, srl_prompts, flattened_sentences = zip(*srl_prompts)
 
     model_s, tokenizer_s, generation_config_s = get_model_tokenizer_generation_config(
-        srl_model
+        srl_model, is_srl_peft
     )
 
     srl_pipe = pipeline(
         "text2text-generation",
-        model=srl_model,
+        model=model_s,
         tokenizer=tokenizer_s,
         generation_config=generation_config_s,
     )
@@ -67,10 +69,18 @@ def srl_predicted_triggers(sentences, triggers, srl_model, batch_size):
 def semantic_role_labeler(
     sentences: List[str],
     trigger_model_name: str = "ahmeshaf/ecb_tagger_seq2seq",
+    is_trigger_peft: bool = False,
     srl_model: str = "cu-kairos/propbank_srl_seq2seq_t5_large",
+    is_srl_peft: bool = False,
     batch_size: int = 32,
 ):
     triggers = tagger(
-        trigger_model_name, sentences, batch_size=batch_size, men_type="evt"
+        trigger_model_name,
+        sentences,
+        batch_size=batch_size,
+        men_type="evt",
+        is_peft=is_trigger_peft,
     )
-    return srl_predicted_triggers(sentences, triggers, srl_model, batch_size)
+    return srl_predicted_triggers(
+        sentences, triggers, srl_model, batch_size, is_srl_peft=is_srl_peft
+    )

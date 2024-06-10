@@ -1,16 +1,22 @@
 import numpy as np
 
+from peft import PeftModel, PeftConfig
 from torch.utils.data import DataLoader as torch_DataLoader
 from tqdm import tqdm
 
 from transformers import (
-    Pipeline, GenerationConfig, T5Tokenizer, T5ForConditionalGeneration,
+    AutoModelForSeq2SeqLM, Pipeline, GenerationConfig, T5Tokenizer, T5ForConditionalGeneration,
 )
 from transformers.pipelines.base import PipelineException
 
 
-def get_model_tokenizer_generation_config(model_name):
-    model = T5ForConditionalGeneration.from_pretrained(model_name)
+def get_model_tokenizer_generation_config(model_name, is_peft=False):
+    if is_peft:
+        config = PeftConfig.from_pretrained(model_name)
+        base_model = AutoModelForSeq2SeqLM.from_pretrained(config.base_model_name_or_path)
+        model = PeftModel.from_pretrained(base_model, model_name)
+    else:
+        model = T5ForConditionalGeneration.from_pretrained(model_name)
     tokenizer = T5Tokenizer.from_pretrained(model_name)
     generation_config = GenerationConfig.from_pretrained(model_name)
     return model, tokenizer, generation_config
