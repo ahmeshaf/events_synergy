@@ -52,7 +52,7 @@ def tag_with_prompts(tagger_model_name, prompts, batch_size=32, is_peft=False):
         model=model,
         tokenizer=tokenizer,
         generation_config=generation_config,
-        device_map="auto",
+        device="cuda",
     )
     tagger_out = []
     for out in tqdm(
@@ -96,6 +96,7 @@ def evaluate(
     split: str = "test",
     men_type: str = "evt",
     batch_size: int = 32,
+    is_peft: bool = False,
 ) -> dict:
     dataset_dict = load_dataset(mention_dataset_name)
     # each record is a prompt sentence with triggers or entities ("run | jump")
@@ -114,7 +115,7 @@ def evaluate(
         for mention in mentions
     ]
 
-    tagger_out = tag_with_prompts(tagger_model_name, prompts, batch_size)
+    tagger_out = tag_with_prompts(tagger_model_name, prompts, batch_size, is_peft)
 
     predicted_mentions_flattened = []
 
@@ -126,7 +127,7 @@ def evaluate(
         )
 
     prf = get_prf(gold_mentions_flattened, predicted_mentions_flattened)
-
+    print(prf)
     return prf
 
 
