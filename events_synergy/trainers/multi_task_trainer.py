@@ -1,88 +1,76 @@
 # Description: Custom Trainer class for multi eval model training
-
+# Author
 import json
 import numpy as np
 import torch
 
-from datasets import concatenate_datasets
+from datasets import load_dataset, concatenate_datasets, Dataset
 from evaluate import load
 from pathlib import Path
-from torch import nn
-from datasets import Dataset
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
     DataCollatorForSeq2Seq,
     GenerationConfig,
     Seq2SeqTrainingArguments,
-    Seq2SeqTrainer,
+    Seq2SeqTrainer, is_apex_available,
 )
-from transformers.utils import logging
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
+from transformers.utils import logging, is_sagemaker_mp_enabled
+from typer import echo, Option, Typer
+from typing import Dict, List, Optional, Union
 
-if TYPE_CHECKING:
-    from transformers.data.data_collator import DataCollator
-    from transformers.modeling_utils import PreTrainedModel
-    from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-    from transformers.trainer_callback import TrainerCallback
-    from transformers.trainer_utils import EvalPrediction
-    from transformers.training_args import TrainingArguments
+from ..utils.helpers import parse_kv, get_prf
+
+if is_apex_available():
+    from apex import amp
+
+if is_sagemaker_mp_enabled():
+    import smdistributed.modelparallel.torch as smp
+    from smdistributed.modelparallel import __version__ as SMP_VERSION
+
+    IS_SAGEMAKER_MP_POST_1_10 = version.parse(SMP_VERSION) >= version.parse("1.10")
+
+    from .trainer_pt_utils import smp_forward_backward, smp_forward_only, smp_gather, smp_nested_concat
+else:
+    IS_SAGEMAKER_MP_POST_1_10 = False
 
 logger = logging.get_logger(__name__)
+app = Typer()
 
 
 def pre_process_eos(dataset, eos_token):
     prompts = [doc for doc in dataset["prompt"]]
     responses = [(doc + " " + eos_token).strip() for doc in dataset["response"]]
-    return Dataset.from_dict({"prompt": prompts, "response": responses})
+    new_dataset = Dataset.from_dict({"prompt": prompts, "response": responses})
+    # new_dataset_long = new_dataset.sort("prompt", reverse=True)
+    # new_dataset_long = Dataset.from_dict(new_dataset_long[:1])
+    # short_dataset = new_dataset.sort("prompt")
+    # short_dataset = Dataset.from_dict(short_dataset[:200])
+    # return concatenate_datasets([new_dataset_long, short_dataset])
+    return new_dataset
 
 
 class MultiEvalTrainer(Seq2SeqTrainer):
     def __init__(
-        self,
-        model: Union["PreTrainedModel", nn.Module] = None,
-        args: "TrainingArguments" = None,
-        data_collator: Optional["DataCollator"] = None,
-        train_dataset: Optional[Dataset] = None,
-        eval_datasets: Optional[Dict[str, Union[Dataset, Dict[str, Dataset]]]] = None,
-        dataset2_is_rouge: Optional[Dict[str, bool]] = None,
-        tokenizer: Optional["PreTrainedTokenizerBase"] = None,
-        model_init: Optional[Callable[[], "PreTrainedModel"]] = None,
-        compute_metrics: Optional[Callable[["EvalPrediction"], Dict]] = None,
-        callbacks: Optional[List["TrainerCallback"]] = None,
-        optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (
-            None,
-            None,
-        ),
-        preprocess_logits_for_metrics: Optional[
-            Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
-        ] = None,
+            self,
+            eval_datasets: Optional[Dict[str, Union[Dataset, Dict[str, Dataset]]]] = None,
+            dataset2_is_rouge: Optional[Dict[str, bool]] = None,
+            **kwargs,
     ):
         self.eval_datasets = eval_datasets
         self.rouge = load("rouge")
-
         self.eval_is_rouge = dataset2_is_rouge
 
-        self.compute_metrics = compute_metrics
         super().__init__(
-            model=model,
-            args=args,
-            data_collator=data_collator,
-            train_dataset=train_dataset,
-            tokenizer=tokenizer,
-            model_init=model_init,
-            compute_metrics=compute_metrics,
-            callbacks=callbacks,
-            optimizers=optimizers,
-            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+            **kwargs,
         )
 
     def evaluate(
-        self,
-        eval_datasets: Optional[Dict[str, Dataset]] = None,
-        ignore_keys: Optional[List[str]] = None,
-        metric_key_prefix: str = "eval",
-        **gen_kwargs,
+            self,
+            eval_datasets: Optional[Dict[str, Dataset]] = None,
+            ignore_keys: Optional[List[str]] = None,
+            metric_key_prefix: str = "eval",
+            **gen_kwargs,
     ) -> Union[Dict[str, float], Dict]:
         """
         Run evaluation and returns metrics.
@@ -92,30 +80,6 @@ class MultiEvalTrainer(Seq2SeqTrainer):
 
         You can also subclass and override this method to inject custom behavior.
 
-        Args:
-            eval_datasets Optional[Dict[str, Dataset]]:
-                Pass a dataset if you wish to override `self.eval_dataset`. If it is a [`~datasets.Dataset`], columns
-                not accepted by the `model.forward()` method are automatically removed. If it is a dictionary, it will
-                evaluate on each dataset, prepending the dictionary key to the metric name. Datasets must implement the
-                `__len__` method.
-            ignore_keys (`List[str]`, *optional*):
-                A list of keys in the output of your model (if it is a dictionary) that should be ignored when
-                gathering predictions.
-            metric_key_prefix (`str`, *optional*, defaults to `"eval"`):
-                An optional prefix to be used as the metrics key prefix. For example the metrics "bleu" will be named
-                "eval_bleu" if the prefix is `"eval"` (default)
-            max_length (`int`, *optional*):
-                The maximum target length to use when predicting with the generate method.
-            num_beams (`int`, *optional*):
-                Number of beams for beam search that will be used when predicting with the generate method. 1 means no
-                beam search.
-            gen_kwargs:
-                Additional `generate` specific kwargs.
-
-        Returns:
-            A dictionary containing the evaluation loss and the potential metrics computed from the predictions. The
-            dictionary also contains the epoch number which comes from the training state.
-            :param task_name:
         """
         eval_scores = {}
         for dataset_name, eval_dataset in self.eval_datasets.items():
@@ -141,36 +105,13 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         decoded_labels = self.decode_predictions(labs)
 
         decoded_preds = [
-            set([p.strip() for p in pred.split("|") if p.strip() != ""])
-            for pred in decoded_preds
+            (i, p.strip()) for i, pred in enumerate(decoded_preds) for p in pred.split("|") if p.strip() != ""
         ]
         decoded_labels = [
-            set([p.strip() for p in pred.split("|") if p.strip() != ""])
-            for pred in decoded_labels
+            (i, p.strip()) for i, pred in enumerate(decoded_labels) for p in pred.split("|") if p.strip() != ""
         ]
 
-        common_preds_lens = [
-            len(set.intersection(p1, p2))
-            for p1, p2 in zip(decoded_preds, decoded_labels)
-        ]
-        decoded_preds_lens = [len(p) for p in decoded_preds]
-        decoded_labels_lens = [len(p) for p in decoded_labels]
-
-        TP = sum(common_preds_lens)
-        FP = sum(decoded_preds_lens) - TP
-        FN = sum(decoded_labels_lens) - TP
-
-        precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
-
-        recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-
-        f1 = (
-            2 * (precision * recall) / (precision + recall)
-            if (precision + recall) > 0
-            else 0.0
-        )
-
-        return {"precision": precision, "recall": recall, "f1": f1}
+        return get_prf(decoded_labels, decoded_preds)
 
     def compute_rouge(self, eval_pred):
         predictions, labs = eval_pred
@@ -190,6 +131,52 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         )
         return decoded_preds
 
+    def training_step(self, model, inputs) -> torch.Tensor:
+        """
+        Perform a training step on a batch of inputs.
+
+        Subclass and override to inject custom behavior.
+
+        Args:
+            model (`nn.Module`):
+                The model to train.
+            inputs (`Dict[str, Union[torch.Tensor, Any]]`):
+                The inputs and targets of the model.
+
+                The dictionary will be unpacked before being fed to the model. Most models expect the targets under the
+                argument `labels`. Check your model's documentation for all accepted arguments.
+
+        Return:
+            `torch.Tensor`: The tensor with training loss on this batch.
+        """
+        try:
+            model.train()
+            inputs = self._prepare_inputs(inputs)
+
+            if is_sagemaker_mp_enabled():
+                loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps)
+                return loss_mb.reduce_mean().detach().to(self.args.device)
+
+            with self.compute_loss_context_manager():
+                loss = self.compute_loss(model, inputs)
+
+            del inputs
+            torch.cuda.empty_cache()
+
+            if self.args.n_gpu > 1:
+                loss = loss.mean()  # mean() to average on multi-gpu parallel training
+
+            if self.use_apex:
+                with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                self.accelerator.backward(loss)
+
+            return loss.detach() / self.args.gradient_accumulation_steps
+        except torch.cuda.OutOfMemoryError:
+            print("Out of memory error")
+            return torch.tensor(0.0).to(self.args.device)
+
 
 def update_config_dict(config, kwargs):
     # Update the config dictionary with the kwargs recursively
@@ -203,12 +190,13 @@ def update_config_dict(config, kwargs):
 
 
 def trainer_seq2seq_multi(
-    config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]], **kwargs
+        config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]], debug: bool=False, **kwargs
 ):
     """
 
     :param config_file:
     :param datasets_dict: Dictionary of Dictionaries of datasets. Outer Dict = task, Inner Dict = split
+    :param debug: If True, only train on a small subset of the data
     :param kwargs: additional arguments to update config_file dictionary
     :return:
     """
@@ -230,6 +218,9 @@ def trainer_seq2seq_multi(
             for dataset in datasets_dict.values()
         ]
     )
+    if debug:
+        train_dataset = train_dataset.sort("prompt")
+        train_dataset = Dataset.from_dict(train_dataset[:200])
 
     eval_datasets = {
         dataset_name: (
@@ -244,7 +235,7 @@ def trainer_seq2seq_multi(
         model_inputs = tokenizer(
             examples["prompt"],
             max_length=config["max_input_length"],
-            truncation=True
+            truncation=True,
         )
         with tokenizer.as_target_tokenizer():
             labels = tokenizer(
@@ -288,7 +279,62 @@ def trainer_seq2seq_multi(
         eval_datasets=evals_tokenized,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        compute_metrics=None,
         # compute_metrics=compute_metrics, # This now gets set depending on which type of dataset is being evaluated
     )
     t5_trainer.train()
     t5_trainer.save_model()
+
+
+@app.command()
+def train(
+        config_file: Path,
+        dataset_names: List[str],
+        debug: bool = False,
+        kv: str = Option(
+            None,
+            "--kv",
+            help="Key-value pairs, separated by commas, e.g., key1=value1,key2=value2",
+        ),
+):
+    """
+    Train datasets of the form:
+        {
+            "prompt": "SRL for [predicate]: sentence with [predicate]",
+            "response": ARG-0: [arg0] | ARG-1: [arg1] | ... | ARG-N: [argn]
+        }
+    :param config_file:
+    :param dataset_names:
+    :param debug: If True, only train on a small subset of the data
+    :param kv: override config file parameters with this. e.g., "num_train_epochs=20,per_device_train_batch_size=8"
+    :return:
+    """
+    dataset_names = list(set(dataset_names))
+    dataset_dict = {}
+
+    for ds_name in dataset_names:
+        dataset_dict[ds_name] = load_dataset(ds_name)
+
+    kv_dict = {}
+
+    if kv:
+        try:
+            kv_dict = parse_kv(kv)
+            echo("Received key-value arguments:")
+            for key, value in kv_dict.items():
+                echo(f"{key}: {value}")
+        except ValueError as e:
+            echo(f"Error: {e}")
+    else:
+        echo("No key-value arguments provided.")
+
+    trainer_seq2seq_multi(
+        config_file,
+        dataset_dict,
+        debug,
+        **kv_dict
+    )
+
+
+if __name__ == "__main__":
+    app()

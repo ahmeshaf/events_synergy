@@ -35,6 +35,7 @@ def run_srl_pipe(srl_model, is_srl_peft, srl_prompts, batch_size):
         model=model,
         tokenizer=tokenizer,
         generation_config=generation_config,
+        device="cuda"
     )
     outputs = []
     for out in tqdm(
@@ -76,10 +77,7 @@ def srl_predicted_triggers(
         curr_triggers_srls_phrases = []
         for trigger, sentence, str_srl in sentence_srl:
             if str_srl != "":
-                arg_srls = [tuple(arg.split(": ")) for arg in str_srl.split(" | ")]
-                arg_labels, arg_phrases = zip(*arg_srls)
-                phrase_offsets = find_phrase_offsets_fuzzy(sentence, arg_phrases)
-                arg_srls = list(zip(arg_labels, arg_phrases, phrase_offsets))
+                arg_srls = get_arg_srls(sentence, str_srl)
                 curr_triggers_srls_phrases.append((trigger, arg_srls))
         triggers_srls_offsets.append(curr_triggers_srls_phrases)
 
@@ -107,10 +105,16 @@ def semantic_role_labeler(
 
 
 def get_arg_srls(sentence, srl_response):
-    arg_srls = [tuple(arg.split(": ")) for arg in srl_response.split(" | ")]
-    arg_labels, arg_phrases = zip(*arg_srls)
-    phrase_offsets = find_phrase_offsets_fuzzy(sentence, arg_phrases)
-    return list(zip(arg_labels, arg_phrases, phrase_offsets))
+    if srl_response is None or srl_response == "":
+        return []
+    arg_srls = [tuple(arg.strip().split(":")) for arg in srl_response.split("|")]
+    arg_srls = [(arg[0].strip(), arg[1].strip()) for arg in arg_srls if arg[1].strip() != ""]
+    if len(arg_srls):
+        arg_labels, arg_phrases = zip(*arg_srls)
+        phrase_offsets = find_phrase_offsets_fuzzy(sentence, arg_phrases)
+        return list(zip(arg_labels, arg_phrases, phrase_offsets))
+    else:
+        return []
 
 
 @app.command()
