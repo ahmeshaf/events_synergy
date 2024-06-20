@@ -49,6 +49,8 @@ def get_tokenized_multitask_datasets(datasets_dict: Dict[str, Dict[str, Dataset]
         for dataset_name, eval_dataset in eval_datasets.items()
     }
 
+    return train_tokenized, evals_tokenized
+
 
 def pre_process_eos(dataset, eos_token):
     prompts = [doc for doc in dataset["prompt"]]

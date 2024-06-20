@@ -62,8 +62,10 @@ def generate_summarized_coreference_dataset(
     summarization_template = Template(SUMMARIZATION_TEMPLATE)
 
     # Get list of mention ids to summarize
-    unique_mention_ids = list(set([id for tup in mention_pairs_train for id in tup] +
-                                  [id for tup in mention_pairs_eval for id in tup]))
+    #unique_mention_ids = list(set([id for tup in mention_pairs_train for id in tup] +
+                                  #[id for tup in mention_pairs_eval for id in tup]))
+
+    unique_mention_ids = list(mention_map.keys())
 
     # Reduced mention map so we only summarize train + eval data
     mention_map_temp = {k: mention_map[k] for k in unique_mention_ids}
@@ -73,7 +75,13 @@ def generate_summarized_coreference_dataset(
                      mention_map_temp.keys()],
         'id': [k for k in mention_map.keys()]
     }
-    batch_size = config['batch_size']
+
+    if 'batch_size' in config.keys():
+        batch_size = config['batch_size']
+    elif ('trainer' in config.keys()) and ('per_device_eval_batch_size' in config['trainer'].keys()):
+        batch_size = config['trainer']['per_device_eval_batch_size']
+    else:
+        batch_size = 1
 
     summaries = []
 
@@ -168,10 +176,10 @@ def pre_process_eos(dataset, eos_token):
     return Dataset.from_dict({"prompt": prompts, "response": responses})
 
 
-def preprocess_data(examples, tokenizer: T5Tokenizer, config: dict):
+def preprocess_data(examples, tokenizer: T5Tokenizer): #, config: dict
     model_inputs = tokenizer(
         examples["prompt"],
-        max_length=config["max_input_length"],
+        #max_length=config["max_input_length"],
         truncation=True
     )
     with tokenizer.as_target_tokenizer():

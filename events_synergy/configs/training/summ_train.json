@@ -1,10 +1,10 @@
 {
-    "model_name_or_path": "/media/rehan/big_disk/models/kairos/ecb/multi/",
+    "model_name_or_path": "google/flan-t5-small",
     "trainer": {
-        "output_dir": "/media/rehan/big_disk/models/kairos/ecb/multi/",
+        "output_dir": "/content/output",
         "num_train_epochs": 100,
-        "per_device_train_batch_size": 128,
-        "per_device_eval_batch_size": 256,
+        "per_device_train_batch_size": 32,
+        "per_device_eval_batch_size": 64,
         "warmup_steps": 100,
         "weight_decay": 0.01,
         "logging_steps": 100,

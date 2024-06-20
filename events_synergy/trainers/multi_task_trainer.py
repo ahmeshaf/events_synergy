@@ -67,7 +67,6 @@ class MultiEvalTrainer(Seq2SeqTrainer):
 
     def evaluate(
             self,
-            eval_datasets: Optional[Dict[str, Dataset]] = None,
             ignore_keys: Optional[List[str]] = None,
             metric_key_prefix: str = "eval",
             **gen_kwargs,
@@ -190,7 +189,7 @@ def update_config_dict(config, kwargs):
 
 
 def trainer_seq2seq_multi(
-        config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]], debug: bool=False, **kwargs
+        config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]], debug: bool = False, **kwargs
 ):
     """
 
