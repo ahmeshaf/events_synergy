@@ -1,33 +1,50 @@
-from datasets import load_dataset
+from datasets import load_dataset, DatasetDict, interleave_datasets, concatenate_datasets
+
+import events_synergy
 from events_synergy.coreference.filtering.lemma_heuristic import LHFilterer
+from .. import coreference
 
 from ..trainers.multi_task_trainer import *
+from .dataset_builder import generate_summarized_coreference_dataset, tokenize_datasets
+from .utils import get_tokenized_multitask_datasets
+import events_synergy.coreference as coref
+
+from ..summarization.dataset_builder import get_xsum
+from ..coreference.dataset_builder import generate_coref_dataset
+
+from typer import Typer
+
+from typing import Tuple
+
+app = Typer()
 
 
 class DynamicMultiEvalTrainer(MultiEvalTrainer):
     def __init__(
-        self,
-        static_train_dataset: Dataset,
-        static_eval_datasets: Dict[str, Dataset],
-        **kwargs,
+            self,
+            static_train_dataset: Dataset,
+            static_eval_datasets: Dict[str, Dataset],
+            **kwargs,
     ):
         self.static_train_dataset = static_train_dataset
         self.static_eval_datasets = static_eval_datasets
 
-        super(DynamicMultiEvalTrainer).__init__(
+        super(DynamicMultiEvalTrainer, self).__init__(
+            train_dataset=self.static_train_dataset,
+            eval_datasets=self.static_eval_datasets,
             **kwargs
         )
 
     def evaluate(
-        self,
-        **kwargs,
+            self,
+            **kwargs,
     ) -> Union[Dict[str, float], Dict]:
         """
         Generate the dynamic datasets and evaluate the model on the evaluation datasets.
-        Evaluate the model on the evaluation datasets.
         """
         self.generate_static_dynamic_datasets()
-        eval_scores = super(DynamicMultiEvalTrainer).evaluate(**kwargs)
+
+        eval_scores = super(DynamicMultiEvalTrainer, self).evaluate(**kwargs)
 
         return eval_scores
 
@@ -35,186 +52,169 @@ class DynamicMultiEvalTrainer(MultiEvalTrainer):
         raise NotImplementedError("This method should be implemented in the subclass.")
 
 
-class SummaryCorefTrainer(MultiEvalTrainer):
+class SummaryCorefTrainer(DynamicMultiEvalTrainer):
     def __init__(
-        self,
-        coref_mention_map: dict,
-        coref_mention_pairs_train: List[Tuple[str, str]],
-        coref_mention_pairs_eval: List[Tuple[str, str]],
-        **kwargs,
+            self,
+            coref_mention_map: dict,
+            coref_mention_pairs_train: List[Tuple[str, str]],
+            coref_mention_pairs_eval: List[Tuple[str, str]],
+            summarization_config_file: Path,
+            **kwargs,
     ):
         self.coref_mention_map = coref_mention_map
         self.coref_mention_pairs_train = coref_mention_pairs_train
         self.coref_mention_pairs_eval = coref_mention_pairs_eval
-
-        super(SummaryCorefTrainer).__init__(
+        self.summarization_config_file = summarization_config_file
+        super(SummaryCorefTrainer, self).__init__(
             **kwargs
         )
 
-    def generate_static_dynamic_datasets(self, epoch):
-        # TODO 1: changed resummarize_ecb_datasets to generate_static_dynamic_datasets()
-        # TODO 2: Use self.coref_mention_map and self.coref_mention_pairs_train and coref_mention_pairs_eval etc
-        dataset_dict = load_dataset("ahmeshaf/ecb_plus_mentions") # don't do this after every epoch
-        lh_filterer = LHFilterer(dataset_dict["train"])
+    def generate_static_dynamic_datasets(self):
         summ_config = json.load(open(self.summarization_config_file))
-
-        save_to_wandb = False
-        if "report_to" in summ_config["trainer"].keys():
-            if summ_config["trainer"]["report_to"] == "wandb":
-                save_to_wandb = True
 
         summarized_coref_dataset = generate_summarized_coreference_dataset(
             self.summarization_config_file,
             self.model,
             self.tokenizer,
-            dataset_dict,
-            lh_filterer,
+            self.coref_mention_map,
+            self.coref_mention_pairs_train,
+            self.coref_mention_pairs_eval,
             men_type="evt",
-            save_to_wandb=save_to_wandb,
-            epoch=epoch,
-        )
-        self.backup_datasets["ecb"] = summarized_coref_dataset
-        # Include sentence level coreference data
-        train_dataset = concatenate_datasets(
-            [
-                pre_process_eos(dataset["train"], self.tokenizer.eos_token)
-                for dataset in self.backup_datasets.values()
-            ]
+            save_to_wandb=("report_to" in summ_config["trainer"].keys()) and (
+                    summ_config["trainer"]["report_to"] == "wandb"),
+            epoch=self.state.epoch / 100,
         )
 
-        eval_datasets = {
-            dataset_name: (
-                pre_process_eos(dataset["dev"], self.tokenizer.eos_token)
-                if "dev" in dataset.keys()
-                else pre_process_eos(dataset["validation"], self.tokenizer.eos_token)
-            )
-            for dataset_name, dataset in self.backup_datasets.items()
+        tokenized_summarized_coref_dataset = \
+        tokenize_datasets({"ecb_summ": summarized_coref_dataset}, self.tokenizer)
+
+        self.train_dataset = interleave_datasets(
+            [self.static_train_dataset, tokenized_summarized_coref_dataset[0]]
+        )
+
+        # Combine static datasets with newly generated one
+        self.eval_datasets = self.static_eval_datasets | tokenized_summarized_coref_dataset[1]
+
+        print(self.eval_datasets)
+
+
+def train_coref_summarizer(
+        config_file: Path,
+        datasets_dict: Dict[str, Dict[str, Dataset]],
+        summarization_config_file: Path,
+        men_type: str = "evt",
+):
+    config = json.load(open(config_file))
+
+    model_name_or_path = config.pop("model_name_or_path")
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+
+    # Generate datasets
+    train_tokenized, evals_tokenized = get_tokenized_multitask_datasets(datasets_dict, tokenizer, config)
+
+    # In the future add support for other datasets/filterers
+    coref_dataset = load_dataset('ahmeshaf/ecb_plus_mentions')
+    filterer = LHFilterer(coref_dataset["train"])
+
+    splitwise_mention_maps = {split: coref.utils.get_mention_map(coref_dataset[split], men_type) for split in
+                              coref_dataset.keys()}
+
+    splitwise_mention_pairs = {split: filterer(splitwise_mention_maps[split]) for split in
+                               splitwise_mention_maps.keys()}
+
+    mention_map = splitwise_mention_maps['train'] | splitwise_mention_maps['dev']
+
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, device_map="auto")
+
+    training_args = Seq2SeqTrainingArguments(**config["trainer"])
+
+    generation_config = GenerationConfig.from_pretrained(model_name_or_path)
+    generation_config.eos_token_id = tokenizer.eos_token_id
+    generation_config.update(**config["generation"])
+
+    training_args.generation_config = generation_config
+    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
+
+    t5_trainer = SummaryCorefTrainer(
+        model=model,
+        args=training_args,
+        static_train_dataset=train_tokenized,
+        static_eval_datasets=evals_tokenized,
+        tokenizer=tokenizer,
+        data_collator=data_collator,
+        coref_mention_map=mention_map,
+        coref_mention_pairs_train=splitwise_mention_pairs['train'],
+        coref_mention_pairs_eval=splitwise_mention_pairs['dev'],
+        summarization_config_file=summarization_config_file,
+    )
+    t5_trainer.train()
+    t5_trainer.save_model()
+
+
+@app.command()
+def train(
+        config_file: Path,
+        dataset_names: List[str],
+        debug: bool = False,
+        summarization_config_file: str = Option(None, "--summ-config"),
+        kv: str = Option(
+            None,
+            "--kv",
+            help="Key-value pairs, separated by commas, e.g., key1=value1,key2=value2",
+        ),
+):
+    """
+    Train datasets of the form:
+        {
+            "prompt": "SRL for [predicate]: sentence with [predicate]",
+            "response": ARG-0: [arg0] | ARG-1: [arg1] | ... | ARG-N: [argn]
         }
+    :param config_file:
+    :param dataset_names:
+    :param debug: If True, only train on a small subset of the data
+    :param summarization_config_file: optional summarization specific config file
+    :param kv: override config file parameters with this. e.g., "num_train_epochs=20,per_device_train_batch_size=8"
+    :return:
+    """
+    dataset_names = list(set(dataset_names))
+    dataset_dict = {}
 
-        train_tokenized = train_dataset.map(
-            preprocess_data, batched=True, fn_kwargs={"tokenizer": self.tokenizer}
-        )
-        evals_tokenized = {
-            dataset_name: eval_dataset.map(
-                preprocess_data, batched=True, fn_kwargs={"tokenizer": self.tokenizer}
+    for ds_name in dataset_names:
+        if ds_name == "xsum":
+            dataset_dict['xsum'] = get_xsum()
+        elif ds_name == "ecb":
+            ecb_dataset_dict = load_dataset('ahmeshaf/ecb_plus_mentions')
+            lh_filterer = LHFilterer(ecb_dataset_dict["train"])
+            coref_dataset = generate_coref_dataset(
+                ecb_dataset_dict, lh_filterer, men_type="evt"
             )
-            for dataset_name, eval_dataset in eval_datasets.items()
-        }
+            dataset_dict['ecb'] = coref_dataset
 
-        self.train_dataset = train_tokenized
-        self.eval_datasets = evals_tokenized
+    if debug:
+        for dataset_key in dataset_dict.keys():
+            for split_key in dataset_dict[dataset_key].keys():
+                dataset_dict[dataset_key][split_key] = dataset_dict[dataset_key][split_key][:100]
+
+    kv_dict = {}
+
+    if kv:
+        try:
+            kv_dict = parse_kv(kv)
+            echo("Received key-value arguments:")
+            for key, value in kv_dict.items():
+                echo(f"{key}: {value}")
+        except ValueError as e:
+            echo(f"Error: {e}")
+    else:
+        echo("No key-value arguments provided.")
+
+    train_coref_summarizer(
+        config_file,
+        dataset_dict,
+        summarization_config_file if summarization_config_file is not None else config_file,
+        **kv_dict
+    )
 
 
-# TODO 3: Refactor this
-# def trainer_seq2seq_multi(
-#     config_file: Path,
-#     coref_dataset_name: str,
-#     summarization_dataset_name: str,
-#     datasets_dict: Dict[str, Dict[str, Dataset]],
-#     summarization_config_file: Optional[
-#         Path
-#     ] = None,  # Config specifically for re-summarization
-# ):
-#     ## So instead of a dynamic trainer, that creates summaries after each eval
-#     ## We can instead change the problem to generate new training dataset after each eval
-#     ## so change the train_dataset after each eval: create a new train_dataset which includes
-#     # the sentence level coref prompts, the xsum summaries, and the summary-level coref prompts
-#
-#     """
-#
-#     :param config_file:
-#     :param datasets_dict: Dictionary of Dictionaries of datasets. Outer Dict = task, Inner Dict = split
-#     :param summarization_config_file: optional config file for re-summarization after each epoch.
-#         if no config is provided re-summarization is disabled.
-#     :return:
-#
-#     Parameters
-#     ----------
-#     summarization_config_file
-#     """
-#     config = json.load(open(config_file))
-#
-#     summ_config = json.load(open(summarization_config_file))
-#
-#     model_name_or_path = config.pop("model_name_or_path")
-#     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-#
-#     # Concatenate the train sets of each dataset
-#
-#     train_dataset = concatenate_datasets(
-#         [
-#             pre_process_eos(dataset["train"], tokenizer.eos_token)
-#             for dataset in datasets_dict.values()
-#         ]
-#     )
-#
-#     eval_datasets = {
-#         dataset_name: (
-#             pre_process_eos(dataset["dev"], tokenizer.eos_token)
-#             if "dev" in dataset.keys()
-#             else pre_process_eos(dataset["validation"], tokenizer.eos_token)
-#         )
-#         for dataset_name, dataset in datasets_dict.items()
-#     }
-#
-#     train_tokenized = train_dataset.map(
-#         preprocess_data,
-#         batched=True,
-#         fn_kwargs={
-#             "tokenizer": tokenizer,
-#             "max_length": config["generation"]["max_length"],
-#         },
-#     )
-#     evals_tokenized = {
-#         dataset_name: eval_dataset.map(
-#             preprocess_data,
-#             batched=True,
-#             fn_kwargs={
-#                 "tokenizer": tokenizer,
-#                 "max_length": config["generation"]["max_length"],
-#             },
-#         )
-#         for dataset_name, eval_dataset in eval_datasets.items()
-#     }
-#
-#     model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, device_map="auto")
-#     # from peft import prepare_model_for_kbit_training
-#     # from peft import LoraConfig, get_peft_model, TaskType
-#     #
-#     # model = prepare_model_for_kbit_training(model)
-#     #
-#     # lora_config = LoraConfig(eval_datasets, ignore_keys, metric_key_prefix, **gen_kwargs
-#     #     r=16, lora_alpha=32, target_modules=["q", "v"], lora_dropout=0.05, bias="none", task_type="SEQ_2_SEQ_LM"
-#     # )
-#     #
-#     # model = get_peft_model(model, lora_config)
-#
-#     training_args = Seq2SeqTrainingArguments(**config["trainer"])
-#
-#     generation_config = GenerationConfig.from_pretrained(model_name_or_path)
-#     generation_config.eos_token_id = tokenizer.eos_token_id
-#     generation_config.update(**config["generation"])
-#
-#     training_args.generation_config = generation_config
-#     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
-#
-#     t5_trainer = MultiEvalTrainer(
-#         model=model,
-#         args=training_args,
-#         train_dataset=train_tokenized,
-#         eval_datasets=evals_tokenized,
-#         tokenizer=tokenizer,
-#         data_collator=data_collator,
-#         backup_datasets=datasets_dict,
-#         summarization_config_file=summarization_config_file,
-#     )
-#     t5_trainer.train()
-#     t5_trainer.save_model()
-#
-#
-# def preprocess_data(examples, tokenizer, max_length=128):
-#     model_inputs = tokenizer(examples["prompt"], max_length=max_length, truncation=True)
-#     with tokenizer.as_target_tokenizer():
-#         labels = tokenizer(examples["response"], max_length=max_length, truncation=True)
-#     model_inputs["labels"] = labels["input_ids"]
-#     return model_inputs
+if __name__ == "__main__":
+    app()
