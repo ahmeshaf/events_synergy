@@ -108,9 +108,22 @@ def get_arg_srls(sentence, srl_response):
     if srl_response is None or srl_response == "":
         return []
     arg_srls = [tuple(arg.strip().split(":")) for arg in srl_response.split("|")]
-    arg_srls = [(arg[0].strip(), arg[1].strip()) for arg in arg_srls if arg[1].strip() != ""]
-    if len(arg_srls):
-        arg_labels, arg_phrases = zip(*arg_srls)
+    arg_srls_split = []
+    for arg in arg_srls:
+        if len(arg) == 2:
+            arg_label = arg[0].strip()
+            arg_phrase = arg[1].strip()
+            arg_srls_split.append((arg_label, arg_phrase))
+        if len(arg) == 1 and "ARG" not in arg[0]:
+            prev_arg = arg_srls_split[-1]
+            arg_label = "C-" + prev_arg[0]
+            arg_phrase = arg[0].strip()
+        else:
+            continue
+        arg_srls_split.append((arg_label, arg_phrase))
+        
+    if len(arg_srls_split):
+        arg_labels, arg_phrases = zip(*arg_srls_split)
         phrase_offsets = find_phrase_offsets_fuzzy(sentence, arg_phrases)
         return list(zip(arg_labels, arg_phrases, phrase_offsets))
     else:
@@ -170,6 +183,7 @@ def evaluate_end_to_end(
     triggers_prf = get_prf(gold_triggers, predicted_triggers)
     overall_prf = get_prf(gold_srls, predicted_srls)
     prf = {"triggers": triggers_prf, "overall": overall_prf}
+    print(mention_dataset_name, split)
     print(prf)
     return prf
 
