@@ -13,26 +13,13 @@ from transformers import (
     DataCollatorForSeq2Seq,
     GenerationConfig,
     Seq2SeqTrainingArguments,
-    Seq2SeqTrainer, is_apex_available,
+    Seq2SeqTrainer,
 )
-from transformers.utils import logging, is_sagemaker_mp_enabled
+from transformers.utils import logging
 from typer import echo, Option, Typer
 from typing import Dict, List, Optional, Union
 
 from ..utils.helpers import parse_kv, get_prf
-
-if is_apex_available():
-    from apex import amp
-
-if is_sagemaker_mp_enabled():
-    import smdistributed.modelparallel.torch as smp
-    from smdistributed.modelparallel import __version__ as SMP_VERSION
-
-    IS_SAGEMAKER_MP_POST_1_10 = version.parse(SMP_VERSION) >= version.parse("1.10")
-
-    from .trainer_pt_utils import smp_forward_backward, smp_forward_only, smp_gather, smp_nested_concat
-else:
-    IS_SAGEMAKER_MP_POST_1_10 = False
 
 logger = logging.get_logger(__name__)
 app = Typer()
@@ -52,10 +39,10 @@ def pre_process_eos(dataset, eos_token):
 
 class MultiEvalTrainer(Seq2SeqTrainer):
     def __init__(
-            self,
-            eval_datasets: Optional[Dict[str, Union[Dataset, Dict[str, Dataset]]]] = None,
-            dataset2_is_rouge: Optional[Dict[str, bool]] = None,
-            **kwargs,
+        self,
+        eval_datasets: Optional[Dict[str, Union[Dataset, Dict[str, Dataset]]]] = None,
+        dataset2_is_rouge: Optional[Dict[str, bool]] = None,
+        **kwargs,
     ):
         self.eval_datasets = eval_datasets
         self.rouge = load("rouge")
@@ -66,10 +53,10 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         )
 
     def evaluate(
-            self,
-            ignore_keys: Optional[List[str]] = None,
-            metric_key_prefix: str = "eval",
-            **gen_kwargs,
+        self,
+        ignore_keys: Optional[List[str]] = None,
+        metric_key_prefix: str = "eval",
+        **gen_kwargs,
     ) -> Union[Dict[str, float], Dict]:
         """
         Run evaluation and returns metrics.
@@ -96,6 +83,10 @@ class MultiEvalTrainer(Seq2SeqTrainer):
                 )
             )
 
+        eval_loss_keys = [key for key in eval_scores if key.endswith("loss")] 
+        eval_loss = sum([eval_scores[key] for key in eval_loss_keys])
+        eval_scores[f"{metric_key_prefix}_loss"] = eval_loss
+
         return eval_scores
 
     def compute_prf(self, eval_pred):
@@ -104,10 +95,16 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         decoded_labels = self.decode_predictions(labs)
 
         decoded_preds = [
-            (i, p.strip()) for i, pred in enumerate(decoded_preds) for p in pred.split("|") if p.strip() != ""
+            (i, p.strip())
+            for i, pred in enumerate(decoded_preds)
+            for p in pred.split("|")
+            if p.strip() != ""
         ]
         decoded_labels = [
-            (i, p.strip()) for i, pred in enumerate(decoded_labels) for p in pred.split("|") if p.strip() != ""
+            (i, p.strip())
+            for i, pred in enumerate(decoded_labels)
+            for p in pred.split("|")
+            if p.strip() != ""
         ]
 
         return get_prf(decoded_labels, decoded_preds)
@@ -152,10 +149,6 @@ class MultiEvalTrainer(Seq2SeqTrainer):
             model.train()
             inputs = self._prepare_inputs(inputs)
 
-            if is_sagemaker_mp_enabled():
-                loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps)
-                return loss_mb.reduce_mean().detach().to(self.args.device)
-
             with self.compute_loss_context_manager():
                 loss = self.compute_loss(model, inputs)
 
@@ -165,11 +158,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
             if self.args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
 
-            if self.use_apex:
-                with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                self.accelerator.backward(loss)
+            self.accelerator.backward(loss)
 
             return loss.detach() / self.args.gradient_accumulation_steps
         except torch.cuda.OutOfMemoryError:
@@ -189,7 +178,11 @@ def update_config_dict(config, kwargs):
 
 
 def trainer_seq2seq_multi(
-        config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]], debug: bool = False, **kwargs
+    config_file: Path,
+    datasets_dict: Dict[str, Dict[str, Dataset]],
+    debug: bool = False,
+    is_peft: bool = False,
+    **kwargs,
 ):
     """
 
@@ -217,9 +210,7 @@ def trainer_seq2seq_multi(
             for dataset in datasets_dict.values()
         ]
     )
-    if debug:
-        train_dataset = train_dataset.sort("prompt")
-        train_dataset = Dataset.from_dict(train_dataset[:200])
+   
 
     eval_datasets = {
         dataset_name: (
@@ -229,6 +220,16 @@ def trainer_seq2seq_multi(
         )
         for dataset_name, dataset in datasets_dict.items()
     }
+
+    if debug:
+        train_dataset = train_dataset.sort("prompt")
+        train_dataset = Dataset.from_dict(train_dataset[:500])
+
+        eval_datasets = {k: Dataset.from_dict(v[:100]) for k, v in eval_datasets.items()}
+        config["trainer"]["logging_steps"] = 5
+        config["trainer"]["warmup_steps"] = 1
+        config["trainer"]["eval_steps"] = 10
+
 
     def preprocess_data(examples):
         model_inputs = tokenizer(
@@ -250,17 +251,32 @@ def trainer_seq2seq_multi(
         for dataset_name, eval_dataset in eval_datasets.items()
     }
 
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, device_map="auto")
-    # from peft import prepare_model_for_kbit_training
-    # from peft import LoraConfig, get_peft_model, TaskType
-    #
-    # model = prepare_model_for_kbit_training(model)
-    #
-    # lora_config = LoraConfig(
-    #     r=16, lora_alpha=32, target_modules=["q", "v"], lora_dropout=0.05, bias="none", task_type="SEQ_2_SEQ_LM"
-    # )
-    #
-    # model = get_peft_model(model, lora_config)
+    if is_peft:
+        from peft import prepare_model_for_kbit_training
+        from peft import LoraConfig, get_peft_model, TaskType
+
+        from transformers import BitsAndBytesConfig
+
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name_or_path, torch_dtype=torch.bfloat16
+        )
+        model = prepare_model_for_kbit_training(model)
+
+        lora_config = LoraConfig(
+            r=16,
+            lora_alpha=32,
+            target_modules=["q", "v"],
+            lora_dropout=0.05,
+            bias="none",
+            task_type=TaskType.SEQ_2_SEQ_LM,
+        )
+
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
+    else:
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name_or_path, device_map="auto"
+        )
 
     training_args = Seq2SeqTrainingArguments(**config["trainer"])
 
@@ -287,14 +303,15 @@ def trainer_seq2seq_multi(
 
 @app.command()
 def train(
-        config_file: Path,
-        dataset_names: List[str],
-        debug: bool = False,
-        kv: str = Option(
-            None,
-            "--kv",
-            help="Key-value pairs, separated by commas, e.g., key1=value1,key2=value2",
-        ),
+    config_file: Path,
+    dataset_names: List[str],
+    is_peft: bool = False,
+    debug: bool = False,
+    kv: str = Option(
+        None,
+        "--kv",
+        help="Key-value pairs, separated by commas, e.g., key1=value1,key2=value2",
+    ),
 ):
     """
     Train datasets of the form:
@@ -304,6 +321,7 @@ def train(
         }
     :param config_file:
     :param dataset_names:
+    :param is_peft: If True, use PEFT for training
     :param debug: If True, only train on a small subset of the data
     :param kv: override config file parameters with this. e.g., "num_train_epochs=20,per_device_train_batch_size=8"
     :return:
@@ -327,12 +345,7 @@ def train(
     else:
         echo("No key-value arguments provided.")
 
-    trainer_seq2seq_multi(
-        config_file,
-        dataset_dict,
-        debug,
-        **kv_dict
-    )
+    trainer_seq2seq_multi(config_file, dataset_dict, debug, is_peft, **kv_dict)
 
 
 if __name__ == "__main__":
