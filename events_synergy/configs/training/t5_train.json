@@ -12,7 +12,7 @@
         "eval_strategy": "steps",
         "save_strategy": "steps",
         "eval_steps": 20000,
-        "save_steps": 10000,
+        "save_steps": 20000,
         "predict_with_generate": true,
         "learning_rate": 5e-5,
         "save_total_limit": 5,
