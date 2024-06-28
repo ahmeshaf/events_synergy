@@ -103,6 +103,7 @@ def train_coref_summarizer(
         datasets_dict: Dict[str, Dict[str, Dataset]],
         summarization_config_file: Path,
         men_type: str = "evt",
+        use_peft: bool = True,
 ):
     config = json.load(open(config_file))
 
@@ -125,6 +126,18 @@ def train_coref_summarizer(
     mention_map = splitwise_mention_maps['train'] | splitwise_mention_maps['dev']
 
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, device_map="auto")
+
+    if use_peft:
+        from peft import prepare_model_for_kbit_training
+        from peft import LoraConfig, get_peft_model, TaskType
+
+        model = prepare_model_for_kbit_training(model)
+
+        lora_config = LoraConfig(
+            r=16, lora_alpha=32, target_modules=["q", "v"], lora_dropout=0.05, bias="none", task_type="SEQ_2_SEQ_LM"
+        )
+
+        model = get_peft_model(model, lora_config)
 
     training_args = Seq2SeqTrainingArguments(**config["trainer"])
 
