@@ -10,4 +10,6 @@ absl-py
 accelerate
 sentencepiece
 peft
+isort
+black
 git+https://github.com/ns-moosavi/coval
