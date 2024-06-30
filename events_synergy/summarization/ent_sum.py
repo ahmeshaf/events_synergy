@@ -1,10 +1,9 @@
-from datasets import load_dataset, Dataset, DatasetDict
-from tqdm import tqdm
-
 import csv
 import logging
-import typer
 
+import typer
+from datasets import Dataset, DatasetDict, load_dataset
+from tqdm import tqdm
 
 app = typer.Typer()
 
@@ -54,11 +53,15 @@ def create_marked_summary_dataset():
         for start_char, end_char in zip(start_char_offsets, end_char_offsets):
             substring = doc[int(start_char) : int(end_char)].strip()
             substring.replace("\n", " ")
-            substring_plus_one = doc[int(start_char) : int(end_char) + 1].strip().replace("\n", " ")
-            substring_plus_one_start = doc[int(start_char) + 1 : int(end_char)].strip().replace("\n", " ")
-            substring_plus_one_plus_one = doc[
-                int(start_char) + 1 : int(end_char) + 1
-            ].strip().replace("\n", " ")
+            substring_plus_one = (
+                doc[int(start_char) : int(end_char) + 1].strip().replace("\n", " ")
+            )
+            substring_plus_one_start = (
+                doc[int(start_char) + 1 : int(end_char)].strip().replace("\n", " ")
+            )
+            substring_plus_one_plus_one = (
+                doc[int(start_char) + 1 : int(end_char) + 1].strip().replace("\n", " ")
+            )
             if substring in surfaces:
                 pass
             elif substring_plus_one in surfaces:
@@ -77,16 +80,17 @@ def create_marked_summary_dataset():
             marked_doc = (
                 doc[:start_char]
                 + "<m> "
-                + doc[start_char : end_char]
+                + doc[start_char:end_char]
                 + " </m>"
                 + doc[end_char:]
             )
-            prompt = f"Summarize <m> {substring} </m> in the following article:\n\n{marked_doc}"
+            prompt = (
+                f"Summarize <m> {substring} </m> in the following"
+                f" article:\n\n{marked_doc}"
+            )
             response = summary[0]
             datapoints.append({"prompt": prompt, "response": response})
-    dataset_dict = DatasetDict(
-        {"train": Dataset.from_list(datapoints[:5])}
-    )
+    dataset_dict = DatasetDict({"train": Dataset.from_list(datapoints[:5])})
     # push to huggingface hub repo "events-synergy/entsum_processed"
     dataset_dict.push_to_hub("events-synergy/entsum_processed_sample")
 
