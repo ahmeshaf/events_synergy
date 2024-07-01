@@ -161,3 +161,9 @@ cython_debug/
 .vscode/
 build/
 
+# Custom additions
+run.sh
+run_gpu.sh
+run_amd.sh
+*.out
+
