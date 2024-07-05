@@ -275,7 +275,7 @@ def trainer_seq2seq_multi(
         model.print_trainable_parameters()
     else:
         model = AutoModelForSeq2SeqLM.from_pretrained(
-            model_name_or_path, device_map="auto"
+            model_name_or_path, device_map="balanced"
         )
 
     training_args = Seq2SeqTrainingArguments(**config["trainer"])
