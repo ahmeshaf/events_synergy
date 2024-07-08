@@ -38,13 +38,10 @@ def run_srl_pipe(srl_model, is_srl_peft, srl_prompts, batch_size):
         device="cuda"
     )
     outputs = []
-    for out in tqdm(
-        srl_pipe(KeyDataset(srl_prompts, "prompt"), batch_size=batch_size),
-        total=len(srl_prompts),
-        desc="SRL",
-    ):
-        outputs.append(out[0]["generated_text"])
-    return outputs
+    for out in srl_pipe(KeyDataset(srl_prompts, "prompt"), batch_size=batch_size):
+        yield out[0]["generated_text"]
+    #     outputs.append(out[0]["generated_text"])
+    # return outputs
 
 
 def srl_predicted_triggers(
@@ -113,14 +110,15 @@ def get_arg_srls(sentence, srl_response):
         if len(arg) == 2:
             arg_label = arg[0].strip()
             arg_phrase = arg[1].strip()
-            arg_srls_split.append((arg_label, arg_phrase))
+            if arg_phrase.strip() != "":
+                arg_srls_split.append((arg_label, arg_phrase))
         if len(arg) == 1 and "ARG" not in arg[0]:
             prev_arg = arg_srls_split[-1]
             arg_label = "C-" + prev_arg[0]
             arg_phrase = arg[0].strip()
         else:
             continue
-        arg_srls_split.append((arg_label, arg_phrase))
+        
         
     if len(arg_srls_split):
         arg_labels, arg_phrases = zip(*arg_srls_split)
@@ -206,7 +204,7 @@ def evaluate_gold_triggers(
     gold_srls = []
     predicted_srls = []
 
-    for record, output in zip(dataset_records, outputs):
+    for record, output in tqdm(zip(dataset_records, outputs),  total=len(dataset_records), desc="SRL"):
         # record is a dictionary with keys: prompt, response, sentence, gold_mentions
         # output is the generated text of the form ARG-0: The quick brown fox | ARG-1: over the lazy dog
         # get the offsets by splitting the output string and finding the phrase offsets
