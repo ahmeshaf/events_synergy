@@ -19,21 +19,47 @@ from transformers.utils import logging
 from typer import echo, Option, Typer
 from typing import Dict, List, Optional, Union
 
-from ..utils.helpers import parse_kv, get_prf
 
 logger = logging.get_logger(__name__)
 app = Typer()
+
+
+def parse_kv(kv: str) -> dict:
+    """
+    Parses a string of key-value pairs separated by commas and ensures proper format.
+    Raises ValueError if the format is incorrect.
+    """
+    kv_dict = {}
+    pairs = kv.split(",")
+    for item in pairs:
+        if "=" not in item:
+            raise ValueError("Each key-value pair must contain an '='.")
+        key, value = item.split("=", 1)  # Split only on the first '=', allowing for '=' in values
+        if not key.strip() or not value.strip():
+            raise ValueError("Both key and value must be non-empty and not just whitespace.")
+        kv_dict[key.strip()] = value.strip()
+    return kv_dict
+
+
+def get_prf(gold_tags: list, predicted_tags: list):
+    # convert to sets
+    gold_tags_set = set(gold_tags)
+    predicted_tags_set = set(predicted_tags)
+    # calculate true positives
+    true_positives = len(gold_tags_set.intersection(predicted_tags_set))
+    # calculate precision
+    precision = true_positives / len(predicted_tags_set) if len(predicted_tags_set) > 0 else 0
+    # calculate recall
+    recall = true_positives / len(gold_tags_set) if len(gold_tags_set) > 0 else 0
+    # calculate f1
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+    return {"precision": precision, "recall": recall, "f1": f1}
 
 
 def pre_process_eos(dataset, eos_token):
     prompts = [doc for doc in dataset["prompt"]]
     responses = [(doc + " " + eos_token).strip() for doc in dataset["response"]]
     new_dataset = Dataset.from_dict({"prompt": prompts, "response": responses})
-    # new_dataset_long = new_dataset.sort("prompt", reverse=True)
-    # new_dataset_long = Dataset.from_dict(new_dataset_long[:1])
-    # short_dataset = new_dataset.sort("prompt")
-    # short_dataset = Dataset.from_dict(short_dataset[:200])
-    # return concatenate_datasets([new_dataset_long, short_dataset])
     return new_dataset
 
 
@@ -146,21 +172,7 @@ class MultiEvalTrainer(Seq2SeqTrainer):
             `torch.Tensor`: The tensor with training loss on this batch.
         """
         try:
-            model.train()
-            inputs = self._prepare_inputs(inputs)
-
-            with self.compute_loss_context_manager():
-                loss = self.compute_loss(model, inputs)
-
-            del inputs
-            torch.cuda.empty_cache()
-
-            if self.args.n_gpu > 1:
-                loss = loss.mean()  # mean() to average on multi-gpu parallel training
-
-            self.accelerator.backward(loss)
-
-            return loss.detach() / self.args.gradient_accumulation_steps
+            return super().training_step(model, inputs)
         except torch.cuda.OutOfMemoryError:
             print("Out of memory error")
             return torch.tensor(0.0).to(self.args.device)
@@ -254,8 +266,6 @@ def trainer_seq2seq_multi(
     if is_peft:
         from peft import prepare_model_for_kbit_training
         from peft import LoraConfig, get_peft_model, TaskType
-
-        from transformers import BitsAndBytesConfig
 
         model = AutoModelForSeq2SeqLM.from_pretrained(
             model_name_or_path, torch_dtype=torch.bfloat16
