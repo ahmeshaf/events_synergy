@@ -226,9 +226,9 @@ def trainer_seq2seq_multi(
         train_dataset = Dataset.from_dict(train_dataset[:500])
 
         eval_datasets = {k: Dataset.from_dict(v[:100]) for k, v in eval_datasets.items()}
-        config["trainer"]["logging_steps"] = 5
-        config["trainer"]["warmup_steps"] = 1
-        config["trainer"]["eval_steps"] = 10
+        config["trainer"]["logging_steps"] = 10
+        config["trainer"]["warmup_steps"] = 5
+        config["trainer"]["eval_steps"] = 50
 
 
     def preprocess_data(examples):
