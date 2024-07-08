@@ -240,7 +240,7 @@ def trainer_seq2seq_multi(
         eval_datasets = {k: Dataset.from_dict(v[:100]) for k, v in eval_datasets.items()}
         config["trainer"]["logging_steps"] = 10
         config["trainer"]["warmup_steps"] = 5
-        config["trainer"]["eval_steps"] = 20
+        config["trainer"]["eval_steps"] = 50
 
 
     def preprocess_data(examples):
@@ -273,11 +273,11 @@ def trainer_seq2seq_multi(
         model = prepare_model_for_kbit_training(model)
 
         lora_config = LoraConfig(
-            r=16,
-            lora_alpha=32,
-            target_modules=["q", "v"],
-            lora_dropout=0.05,
-            bias="none",
+            r=64,  # Increased rank
+            lora_alpha=16,  # Scaling factor
+            target_modules=["q", "v", "k", "o", "wi", "wo"],  # Expanded target modules
+            lora_dropout=0.1,
+            # bias="none",
             task_type=TaskType.SEQ_2_SEQ_LM,
         )
 
@@ -285,7 +285,7 @@ def trainer_seq2seq_multi(
         model.print_trainable_parameters()
     else:
         model = AutoModelForSeq2SeqLM.from_pretrained(
-            model_name_or_path, device_map="balanced"
+            model_name_or_path, device_map="auto"
         )
 
     training_args = Seq2SeqTrainingArguments(**config["trainer"])
