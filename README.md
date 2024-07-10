@@ -1,5 +1,12 @@
 # Synergetic Event Task Training
 
+## Training Scripts
+
+- finetune ent-sum
+```sh
+python events_synergy/trainers/multi_task_trainer.py events_synergy/configs/training/t5_train.json events-synergy/entsum_processed
+```
+
 ## Table of Contents
 - [Getting Started](#getting-started)
 - [Event Tagging](#event-tagging)
