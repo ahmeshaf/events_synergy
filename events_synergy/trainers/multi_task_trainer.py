@@ -194,6 +194,7 @@ def trainer_seq2seq_multi(
     datasets_dict: Dict[str, Dict[str, Dataset]],
     debug: bool = False,
     is_peft: bool = False,
+    check_pt: str = None,
     **kwargs,
 ):
     """
@@ -307,7 +308,10 @@ def trainer_seq2seq_multi(
         compute_metrics=None,
         # compute_metrics=compute_metrics, # This now gets set depending on which type of dataset is being evaluated
     )
-    t5_trainer.train()
+    if check_pt:
+        t5_trainer.train(check_pt)
+    else:
+        t5_trainer.train()
     t5_trainer.save_model()
 
 
@@ -317,6 +321,7 @@ def train(
     dataset_names: List[str],
     is_peft: bool = False,
     debug: bool = False,
+    check_pt: str: None,
     kv: str = Option(
         None,
         "--kv",
@@ -355,7 +360,7 @@ def train(
     else:
         echo("No key-value arguments provided.")
 
-    trainer_seq2seq_multi(config_file, dataset_dict, debug, is_peft, **kv_dict)
+    trainer_seq2seq_multi(config_file, dataset_dict, debug, is_peft, check_pt, **kv_dict)
 
 
 if __name__ == "__main__":
