@@ -1,26 +1,29 @@
 {
-    "model_name_or_path": "/media/rehan/big_disk/models/kairos/ecb/multi/",
+    "model_name_or_path": "google/flan-t5-xl",
     "trainer": {
-        "output_dir": "/media/rehan/big_disk/models/kairos/ecb/multi/",
-        "num_train_epochs": 100,
-        "per_device_train_batch_size": 128,
-        "per_device_eval_batch_size": 256,
+        "output_dir": "/content/output",
+        "num_train_epochs": 20,
+        "per_device_train_batch_size": 16,
+        "per_device_eval_batch_size": 32,
         "warmup_steps": 100,
         "weight_decay": 0.01,
         "logging_steps": 100,
-        "evaluation_strategy": "steps",
-        "eval_steps": 200,
+        "evaluation_strategy": "epoch",
         "predict_with_generate": true,
         "learning_rate": 5e-5,
         "save_total_limit": 1,
+        "metric_for_best_model": "eval_ecb_f1",
+        "greater_is_better": true,
         "seed": 42,
-        "resume_from_checkpoint": true
+        "resume_from_checkpoint": true,
+        "report_to": "wandb",
+        "run_name": "flan-t5-xl-ecb-xsum"
+
     },
     "generation": {
-        "early_stopping": true,
         "min_new_tokens": 2,
-        "num_beams": 2,
-        "max_length": 512
+        "max_length": 128
     },
-    "optimizer": {"lr": 5e-5, "eps": 1e-8}
+    "optimizer": {"lr": 5e-5, "eps": 1e-8},
+    "max_input_length": 128
 }

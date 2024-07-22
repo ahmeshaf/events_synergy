@@ -1,10 +1,10 @@
 from pathlib import Path
-from typer import Typer
 from typing import List
 
-from ..trainers.multi_task_trainer import trainer_seq2seq_multi
+from typer import Typer
 
-from .dataset_builder import get_xsum
+from ..trainers.multi_task_trainer import trainer_seq2seq_multi
+from .dataset_builder import get_entsum, get_xsum
 
 app = Typer()
 
@@ -17,6 +17,8 @@ def train(config_file: Path, dataset_names: List[str]):
     for ds_name in dataset_names:
         if ds_name == "xsum":
             summ_dataset_dict[ds_name] = get_xsum()
+        elif ds_name == "entsum":
+            summ_dataset_dict[ds_name] = get_entsum()
 
     trainer_seq2seq_multi(
         config_file,

@@ -267,6 +267,8 @@ class TestCoreference:
         assert len(set(clusters)) == 2
 
 
+
+
 # Run the test
 if __name__ == "__main__":
     pytest.main(["-s", "test_coreference.py"])

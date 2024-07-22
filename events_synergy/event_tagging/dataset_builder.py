@@ -32,7 +32,14 @@ def get_tagger_dataset(dataset: Dataset, men_type="evt") -> Dataset:
     trigger_records = [
         {
             "prompt": f"{TRIGGERS_PREFIX}: " + sent_id2sentence[sent_id],
-            "response": str(" | ".join([record["mention_text"] for record in records])),
+            "response": str(
+                " | ".join(
+                    [
+                        record["mention_text"] if record["mention_text"] else "<unk>"
+                        for record in records
+                    ]
+                )
+            ),
             "sentence": sent_id2sentence[sent_id],
             "gold_mentions": [
                 str((record["mention_text"], record["start_char"], record["end_char"]))

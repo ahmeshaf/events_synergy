@@ -1,14 +1,12 @@
 # Description: Custom Trainer class for multi eval model training
-
+# Author
 import json
 import numpy as np
 import torch
 
-from datasets import concatenate_datasets
+from datasets import load_dataset, concatenate_datasets, Dataset
 from evaluate import load
 from pathlib import Path
-from torch import nn
-from datasets import Dataset
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -18,68 +16,70 @@ from transformers import (
     Seq2SeqTrainer,
 )
 from transformers.utils import logging
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
+from typer import echo, Option, Typer
+from typing import Dict, List, Optional, Union
 
-if TYPE_CHECKING:
-    from transformers.data.data_collator import DataCollator
-    from transformers.modeling_utils import PreTrainedModel
-    from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-    from transformers.trainer_callback import TrainerCallback
-    from transformers.trainer_utils import EvalPrediction
-    from transformers.training_args import TrainingArguments
 
 logger = logging.get_logger(__name__)
+app = Typer()
+
+
+def parse_kv(kv: str) -> dict:
+    """
+    Parses a string of key-value pairs separated by commas and ensures proper format.
+    Raises ValueError if the format is incorrect.
+    """
+    kv_dict = {}
+    pairs = kv.split(",")
+    for item in pairs:
+        if "=" not in item:
+            raise ValueError("Each key-value pair must contain an '='.")
+        key, value = item.split("=", 1)  # Split only on the first '=', allowing for '=' in values
+        if not key.strip() or not value.strip():
+            raise ValueError("Both key and value must be non-empty and not just whitespace.")
+        kv_dict[key.strip()] = value.strip()
+    return kv_dict
+
+
+def get_prf(gold_tags: list, predicted_tags: list):
+    # convert to sets
+    gold_tags_set = set(gold_tags)
+    predicted_tags_set = set(predicted_tags)
+    # calculate true positives
+    true_positives = len(gold_tags_set.intersection(predicted_tags_set))
+    # calculate precision
+    precision = true_positives / len(predicted_tags_set) if len(predicted_tags_set) > 0 else 0
+    # calculate recall
+    recall = true_positives / len(gold_tags_set) if len(gold_tags_set) > 0 else 0
+    # calculate f1
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+    return {"precision": precision, "recall": recall, "f1": f1}
 
 
 def pre_process_eos(dataset, eos_token):
     prompts = [doc for doc in dataset["prompt"]]
     responses = [(doc + " " + eos_token).strip() for doc in dataset["response"]]
-    return Dataset.from_dict({"prompt": prompts, "response": responses})
+    new_dataset = Dataset.from_dict({"prompt": prompts, "response": responses})
+    return new_dataset
 
 
 class MultiEvalTrainer(Seq2SeqTrainer):
     def __init__(
         self,
-        model: Union["PreTrainedModel", nn.Module] = None,
-        args: "TrainingArguments" = None,
-        data_collator: Optional["DataCollator"] = None,
-        train_dataset: Optional[Dataset] = None,
         eval_datasets: Optional[Dict[str, Union[Dataset, Dict[str, Dataset]]]] = None,
         dataset2_is_rouge: Optional[Dict[str, bool]] = None,
-        tokenizer: Optional["PreTrainedTokenizerBase"] = None,
-        model_init: Optional[Callable[[], "PreTrainedModel"]] = None,
-        compute_metrics: Optional[Callable[["EvalPrediction"], Dict]] = None,
-        callbacks: Optional[List["TrainerCallback"]] = None,
-        optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (
-            None,
-            None,
-        ),
-        preprocess_logits_for_metrics: Optional[
-            Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
-        ] = None,
+        **kwargs,
     ):
         self.eval_datasets = eval_datasets
         self.rouge = load("rouge")
-
         self.eval_is_rouge = dataset2_is_rouge
 
-        self.compute_metrics = compute_metrics
         super().__init__(
-            model=model,
-            args=args,
-            data_collator=data_collator,
-            train_dataset=train_dataset,
-            tokenizer=tokenizer,
-            model_init=model_init,
-            compute_metrics=compute_metrics,
-            callbacks=callbacks,
-            optimizers=optimizers,
-            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+            **kwargs,
         )
 
     def evaluate(
         self,
-        eval_datasets: Optional[Dict[str, Dataset]] = None,
         ignore_keys: Optional[List[str]] = None,
         metric_key_prefix: str = "eval",
         **gen_kwargs,
@@ -92,30 +92,6 @@ class MultiEvalTrainer(Seq2SeqTrainer):
 
         You can also subclass and override this method to inject custom behavior.
 
-        Args:
-            eval_datasets Optional[Dict[str, Dataset]]:
-                Pass a dataset if you wish to override `self.eval_dataset`. If it is a [`~datasets.Dataset`], columns
-                not accepted by the `model.forward()` method are automatically removed. If it is a dictionary, it will
-                evaluate on each dataset, prepending the dictionary key to the metric name. Datasets must implement the
-                `__len__` method.
-            ignore_keys (`List[str]`, *optional*):
-                A list of keys in the output of your model (if it is a dictionary) that should be ignored when
-                gathering predictions.
-            metric_key_prefix (`str`, *optional*, defaults to `"eval"`):
-                An optional prefix to be used as the metrics key prefix. For example the metrics "bleu" will be named
-                "eval_bleu" if the prefix is `"eval"` (default)
-            max_length (`int`, *optional*):
-                The maximum target length to use when predicting with the generate method.
-            num_beams (`int`, *optional*):
-                Number of beams for beam search that will be used when predicting with the generate method. 1 means no
-                beam search.
-            gen_kwargs:
-                Additional `generate` specific kwargs.
-
-        Returns:
-            A dictionary containing the evaluation loss and the potential metrics computed from the predictions. The
-            dictionary also contains the epoch number which comes from the training state.
-            :param task_name:
         """
         eval_scores = {}
         for dataset_name, eval_dataset in self.eval_datasets.items():
@@ -133,6 +109,10 @@ class MultiEvalTrainer(Seq2SeqTrainer):
                 )
             )
 
+        eval_loss_keys = [key for key in eval_scores if key.endswith("loss")] 
+        eval_loss = sum([eval_scores[key] for key in eval_loss_keys])
+        eval_scores[f"{metric_key_prefix}_loss"] = eval_loss
+
         return eval_scores
 
     def compute_prf(self, eval_pred):
@@ -141,36 +121,19 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         decoded_labels = self.decode_predictions(labs)
 
         decoded_preds = [
-            set([p.strip() for p in pred.split("|") if p.strip() != ""])
-            for pred in decoded_preds
+            (i, p.strip())
+            for i, pred in enumerate(decoded_preds)
+            for p in pred.split("|")
+            if p.strip() != ""
         ]
         decoded_labels = [
-            set([p.strip() for p in pred.split("|") if p.strip() != ""])
-            for pred in decoded_labels
+            (i, p.strip())
+            for i, pred in enumerate(decoded_labels)
+            for p in pred.split("|")
+            if p.strip() != ""
         ]
 
-        common_preds_lens = [
-            len(set.intersection(p1, p2))
-            for p1, p2 in zip(decoded_preds, decoded_labels)
-        ]
-        decoded_preds_lens = [len(p) for p in decoded_preds]
-        decoded_labels_lens = [len(p) for p in decoded_labels]
-
-        TP = sum(common_preds_lens)
-        FP = sum(decoded_preds_lens) - TP
-        FN = sum(decoded_labels_lens) - TP
-
-        precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
-
-        recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-
-        f1 = (
-            2 * (precision * recall) / (precision + recall)
-            if (precision + recall) > 0
-            else 0.0
-        )
-
-        return {"precision": precision, "recall": recall, "f1": f1}
+        return get_prf(decoded_labels, decoded_preds)
 
     def compute_rouge(self, eval_pred):
         predictions, labs = eval_pred
@@ -190,6 +153,30 @@ class MultiEvalTrainer(Seq2SeqTrainer):
         )
         return decoded_preds
 
+    def training_step(self, model, inputs) -> torch.Tensor:
+        """
+        Perform a training step on a batch of inputs.
+
+        Subclass and override to inject custom behavior.
+
+        Args:
+            model (`nn.Module`):
+                The model to train.
+            inputs (`Dict[str, Union[torch.Tensor, Any]]`):
+                The inputs and targets of the model.
+
+                The dictionary will be unpacked before being fed to the model. Most models expect the targets under the
+                argument `labels`. Check your model's documentation for all accepted arguments.
+
+        Return:
+            `torch.Tensor`: The tensor with training loss on this batch.
+        """
+        try:
+            return super().training_step(model, inputs)
+        except torch.cuda.OutOfMemoryError:
+            print("Out of memory error")
+            return torch.tensor(0.0).to(self.args.device)
+
 
 def update_config_dict(config, kwargs):
     # Update the config dictionary with the kwargs recursively
@@ -203,12 +190,18 @@ def update_config_dict(config, kwargs):
 
 
 def trainer_seq2seq_multi(
-    config_file: Path, datasets_dict: Dict[str, Dict[str, Dataset]], **kwargs
+    config_file: Path,
+    datasets_dict: Dict[str, Dict[str, Dataset]],
+    debug: bool = False,
+    is_peft: bool = False,
+    check_pt: str = None,
+    **kwargs,
 ):
     """
 
     :param config_file:
     :param datasets_dict: Dictionary of Dictionaries of datasets. Outer Dict = task, Inner Dict = split
+    :param debug: If True, only train on a small subset of the data
     :param kwargs: additional arguments to update config_file dictionary
     :return:
     """
@@ -230,6 +223,7 @@ def trainer_seq2seq_multi(
             for dataset in datasets_dict.values()
         ]
     )
+   
 
     eval_datasets = {
         dataset_name: (
@@ -240,11 +234,21 @@ def trainer_seq2seq_multi(
         for dataset_name, dataset in datasets_dict.items()
     }
 
+    if debug:
+        train_dataset = train_dataset.sort("prompt")
+        train_dataset = Dataset.from_dict(train_dataset[:500])
+
+        eval_datasets = {k: Dataset.from_dict(v[:100]) for k, v in eval_datasets.items()}
+        config["trainer"]["logging_steps"] = 10
+        config["trainer"]["warmup_steps"] = 5
+        config["trainer"]["eval_steps"] = 50
+
+
     def preprocess_data(examples):
         model_inputs = tokenizer(
             examples["prompt"],
             max_length=config["max_input_length"],
-            truncation=True
+            truncation=True,
         )
         with tokenizer.as_target_tokenizer():
             labels = tokenizer(
@@ -260,17 +264,30 @@ def trainer_seq2seq_multi(
         for dataset_name, eval_dataset in eval_datasets.items()
     }
 
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name_or_path, device_map="auto")
-    # from peft import prepare_model_for_kbit_training
-    # from peft import LoraConfig, get_peft_model, TaskType
-    #
-    # model = prepare_model_for_kbit_training(model)
-    #
-    # lora_config = LoraConfig(
-    #     r=16, lora_alpha=32, target_modules=["q", "v"], lora_dropout=0.05, bias="none", task_type="SEQ_2_SEQ_LM"
-    # )
-    #
-    # model = get_peft_model(model, lora_config)
+    if is_peft:
+        from peft import prepare_model_for_kbit_training
+        from peft import LoraConfig, get_peft_model, TaskType
+
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name_or_path, torch_dtype=torch.bfloat16
+        )
+        model = prepare_model_for_kbit_training(model)
+
+        lora_config = LoraConfig(
+            r=64,  # Increased rank
+            lora_alpha=16,  # Scaling factor
+            target_modules=["q", "v", "k", "o", "wi", "wo"],  # Expanded target modules
+            lora_dropout=0.1,
+            # bias="none",
+            task_type=TaskType.SEQ_2_SEQ_LM,
+        )
+
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
+    else:
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name_or_path, device_map="auto"
+        )
 
     training_args = Seq2SeqTrainingArguments(**config["trainer"])
 
@@ -288,7 +305,63 @@ def trainer_seq2seq_multi(
         eval_datasets=evals_tokenized,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        compute_metrics=None,
         # compute_metrics=compute_metrics, # This now gets set depending on which type of dataset is being evaluated
     )
-    t5_trainer.train()
+    if check_pt:
+        t5_trainer.train(check_pt)
+    else:
+        t5_trainer.train()
     t5_trainer.save_model()
+
+
+@app.command()
+def train(
+    config_file: Path,
+    dataset_names: List[str],
+    is_peft: bool = False,
+    debug: bool = False,
+    check_pt: str: None,
+    kv: str = Option(
+        None,
+        "--kv",
+        help="Key-value pairs, separated by commas, e.g., key1=value1,key2=value2",
+    ),
+):
+    """
+    Train datasets of the form:
+        {
+            "prompt": "SRL for [predicate]: sentence with [predicate]",
+            "response": ARG-0: [arg0] | ARG-1: [arg1] | ... | ARG-N: [argn]
+        }
+    :param config_file:
+    :param dataset_names:
+    :param is_peft: If True, use PEFT for training
+    :param debug: If True, only train on a small subset of the data
+    :param kv: override config file parameters with this. e.g., "num_train_epochs=20,per_device_train_batch_size=8"
+    :return:
+    """
+    dataset_names = list(set(dataset_names))
+    dataset_dict = {}
+
+    for ds_name in dataset_names:
+        dataset_dict[ds_name] = load_dataset(ds_name)
+
+    kv_dict = {}
+
+    if kv:
+        try:
+            kv_dict = parse_kv(kv)
+            echo("Received key-value arguments:")
+            for key, value in kv_dict.items():
+                echo(f"{key}: {value}")
+        except ValueError as e:
+            echo(f"Error: {e}")
+    else:
+        echo("No key-value arguments provided.")
+
+    trainer_seq2seq_multi(config_file, dataset_dict, debug, is_peft, check_pt, **kv_dict)
+
+
+if __name__ == "__main__":
+    app()

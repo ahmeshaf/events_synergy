@@ -1,5 +1,6 @@
-from datasets import Dataset, DatasetDict, load_dataset
 import pathlib
+
+from datasets import Dataset, DatasetDict, load_dataset
 
 DATA_ROOT = (pathlib.Path(__file__).parent.parent / "data").resolve()
 CNN_URL = "https://drive.google.com/uc?id=0BwmD_VLjROrfTHk4NFg2SndKcjQ"
@@ -32,3 +33,8 @@ def get_xsum():
     XSUM_DS = "EdinburghNLP/xsum"
     dataset = load_dataset(XSUM_DS)
     return generate_summ_dataset(dataset, "document", "summary")
+
+
+def get_entsum():
+    dataset_name = "events-synergy/entsum_processed"
+    return load_dataset(dataset_name)

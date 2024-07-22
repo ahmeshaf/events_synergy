@@ -13,12 +13,12 @@ from ..task_constants import COREF_TEMPLATE
 
 class MentionsCorefResolver(Callable):
     def __init__(
-        self,
-        model,
-        tokenizer,
-        generation_config,
-        filterer=None,
-        context_key="marked_sentence",
+            self,
+            model,
+            tokenizer,
+            generation_config,
+            filterer=None,
+            context_key="marked_sentence",
     ):
         self.filterer = filterer
         self.model = model
@@ -56,7 +56,7 @@ class MentionsCorefResolver(Callable):
         similarities = []
 
         for i in tqdm(range(0, len(mention_pair_prompts), batch_size)):
-            prompt_batch = mention_pair_prompts[i : i + batch_size]
+            prompt_batch = mention_pair_prompts[i: i + batch_size]
             responses = self.coref_pipeline(prompt_batch, **kwargs)
             for response in responses:
                 similarities.append(response["generated_text"] == "Yes")
@@ -108,7 +108,7 @@ class DocumentCorefResolver(MentionsCorefResolver):
 
         mention_map = {}
         for (topic, doc_id, sentence_id, sentence), triggers in zip(
-            topic_doc_sentence_ids, event_triggers
+                topic_doc_sentence_ids, event_triggers
         ):
 
             for i, trigger in enumerate(triggers):
@@ -123,7 +123,7 @@ class DocumentCorefResolver(MentionsCorefResolver):
                     "start_char": start,
                     "end_char": end,
                     "marked_sentence": sentence[: start]
-                        + " <m> " + mention_txt + " </m> " + sentence[end:],
+                                       + " <m> " + mention_txt + " </m> " + sentence[end:],
                     "mention_id": mention_id,
                     "split": "predict",
                     "men_type": "evt",
@@ -131,3 +131,4 @@ class DocumentCorefResolver(MentionsCorefResolver):
                     "sentence_tokens": sentence.split(),
                 }
         return super().__call__(mention_map, **kwargs)
+
